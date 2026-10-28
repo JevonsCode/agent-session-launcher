@@ -6,6 +6,7 @@ Future<Map<String, Object?>> handleRequest(
   SessionLauncher? launcher,
 }) async {
   try {
+    final SessionLauncher service = launcher ?? SessionLauncher();
     if (input is! Map<String, Object?> ||
         input['version'] != 1 ||
         input['action'] is! String) {
@@ -27,7 +28,17 @@ Future<Map<String, Object?>> handleRequest(
       return <String, Object?>{
         'version': 1,
         'ok': true,
-        'client': classifyAgentSource(source, claudeEntrypoint: entrypoint),
+        'client': service.classify(source, claudeEntrypoint: entrypoint),
+      };
+    }
+    if (action == 'clients') {
+      _onlyKeys(input, const <String>{'version', 'action'});
+      return <String, Object?>{
+        'version': 1,
+        'ok': true,
+        'clients': <Object?>[
+          for (final ClientInfo client in service.clients()) client.toJson(),
+        ],
       };
     }
     if (action != 'inspect' && action != 'open') {
@@ -61,27 +72,18 @@ Future<Map<String, Object?>> handleRequest(
       workspacePath: _string(rawTarget, 'workspacePath'),
       hostSessionId: _string(rawTarget, 'hostSessionId'),
     );
-    final Object? rawPreferences = input['preferences'];
-    if (input.containsKey('preferences') &&
-        rawPreferences is! Map<String, Object?>) {
-      throw const SessionLaunchException(
-        'invalid_request',
-        'Preferences must be an object.',
-      );
+    LaunchPreferences? preferences;
+    if (input.containsKey('preferences')) {
+      final Object? raw = input['preferences'];
+      if (raw is! Map<String, Object?>) {
+        throw const SessionLaunchException(
+          'invalid_request',
+          'Preferences must be an object.',
+        );
+      }
+      _onlyKeys(raw, const <String>{'macosTerminal', 'itermOpenMode'});
+      preferences = LaunchPreferences.fromJson(raw);
     }
-    final Map<String, Object?> preferences =
-        rawPreferences as Map<String, Object?>? ?? <String, Object?>{};
-    _onlyKeys(preferences, const <String>{'macosTerminal', 'itermOpenMode'});
-    final String terminal = _string(preferences, 'macosTerminal') ?? 'terminal';
-    final String mode = _string(preferences, 'itermOpenMode') ?? 'new-window';
-    if (!const <String>{'terminal', 'iterm'}.contains(terminal) ||
-        !const <String>{'new-window', 'new-tab'}.contains(mode)) {
-      throw const SessionLaunchException(
-        'invalid_preferences',
-        'Unsupported terminal preference.',
-      );
-    }
-    final SessionLauncher service = launcher ?? SessionLauncher();
     if (action == 'inspect') {
       final LaunchPlan plan = service.inspect(target);
       return <String, Object?>{
@@ -91,7 +93,7 @@ Future<Map<String, Object?>> handleRequest(
         'openSupported': service.supportsOpening(plan),
       };
     }
-    await service.open(target, macosTerminal: terminal, itermOpenMode: mode);
+    await service.open(target, preferences: preferences);
     return <String, Object?>{
       'version': 1,
       'ok': true,

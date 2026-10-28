@@ -268,8 +268,10 @@ void main() {
           conversationId: 'session-123',
           workspacePath: temp.path,
         ),
-        macosTerminal: 'iterm',
-        itermOpenMode: 'new-tab',
+        preferences: const LaunchPreferences(
+          macosTerminal: MacosTerminal.iterm,
+          itermOpenMode: ITermOpenMode.newTab,
+        ),
       );
       expect(arguments!.last, contains('tell application "iTerm"'));
       expect(arguments!.last, contains('create tab with default profile)'));
@@ -289,8 +291,10 @@ void main() {
           conversationId: 'session-123',
           workspacePath: temp.path,
         ),
-        macosTerminal: 'iterm',
-        itermOpenMode: 'new-window',
+        preferences: const LaunchPreferences(
+          macosTerminal: MacosTerminal.iterm,
+          itermOpenMode: ITermOpenMode.newWindow,
+        ),
       );
       expect(arguments!.last, contains('create window with default profile)'));
       expect(

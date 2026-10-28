@@ -5,38 +5,102 @@
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version", "action", "source"],
+      "required": [
+        "version",
+        "action",
+        "source"
+      ],
       "properties": {
-        "version": { "const": 1 },
-        "action": { "const": "classify" },
-        "source": { "type": "string", "minLength": 1 },
-        "claudeEntrypoint": { "type": "string" }
+        "version": {
+          "const": 1
+        },
+        "action": {
+          "const": "classify"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "claudeEntrypoint": {
+          "type": "string"
+        }
       }
     },
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version", "action", "target"],
+      "required": [
+        "version",
+        "action"
+      ],
       "properties": {
-        "version": { "const": 1 },
-        "action": { "enum": ["inspect", "open"] },
+        "version": {
+          "const": 1
+        },
+        "action": {
+          "const": "clients"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "action",
+        "target"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "action": {
+          "enum": [
+            "inspect",
+            "open"
+          ]
+        },
         "target": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["client"],
+          "required": [
+            "client"
+          ],
           "properties": {
-            "client": { "type": "string", "minLength": 1 },
-            "conversationId": { "type": "string", "maxLength": 256 },
-            "workspacePath": { "type": "string", "maxLength": 4096 },
-            "hostSessionId": { "type": "string", "maxLength": 70 }
+            "client": {
+              "type": "string",
+              "minLength": 1
+            },
+            "conversationId": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "workspacePath": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "hostSessionId": {
+              "type": "string",
+              "maxLength": 70
+            }
           }
         },
         "preferences": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "macosTerminal": { "enum": ["terminal", "iterm"] },
-            "itermOpenMode": { "enum": ["new-window", "new-tab"] }
+            "macosTerminal": {
+              "enum": [
+                "terminal",
+                "iterm"
+              ]
+            },
+            "itermOpenMode": {
+              "enum": [
+                "new-window",
+                "new-tab"
+              ]
+            }
           }
         }
       }

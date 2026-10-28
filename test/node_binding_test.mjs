@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdtemp, writeFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { requestLauncher } from '../bindings/node/index.mjs';
+import { createLauncher, requestLauncher } from '../bindings/node/index.mjs';
 
 const binary = process.env.AGENT_SESSION_LAUNCHER_BIN;
 if (!binary) throw new Error('Set AGENT_SESSION_LAUNCHER_BIN to the compiled executable.');
@@ -40,6 +40,31 @@ test('Node host rejects invalid executable paths and oversized requests', async 
   await assert.rejects(() => requestLauncher(binary, { version: 1, action: 'classify', source: 'x'.repeat(70000) }), /large/);
 });
 
+test('Node host opts in to a trusted incremental configuration file', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'agent-launch-config-'));
+  try {
+    const config = join(directory, 'agents.json');
+    const definition = { schemaVersion: 1, clients: {
+      'example-cli': { aliases: ['Example CLI'], launch: { command: ['example', '--resume', '{id}'] } },
+    } };
+    await writeFile(config, JSON.stringify(definition));
+    const custom = await requestLauncher(binary, { version: 1, action: 'classify', source: 'Example CLI' }, { configPath: config });
+    assert.equal(custom.client, 'example-cli');
+    const builtin = await requestLauncher(binary, { version: 1, action: 'classify', source: 'Pi' }, { configPath: config });
+    assert.equal(builtin.client, 'pi');
+    definition.clients['example-cli'].launch.command = ['example', '--continue', '{id}'];
+    await writeFile(config, JSON.stringify(definition));
+    const reloaded = await requestLauncher(binary, { version: 1, action: 'inspect', target: {
+      client: 'example-cli', conversationId: 'session-42',
+      workspacePath: process.platform === 'win32' ? 'C:\\workspace' : '/workspace',
+    } }, { configPath: config });
+    assert.deepEqual(reloaded.plan.arguments, ['--continue', 'session-42']);
+    await assert.rejects(() => requestLauncher(binary, { version: 1, action: 'classify', source: 'Pi' }, { configPath: 'relative' }), /absolute/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('Node host times out without retrying an uncertain open', async () => {
   if (process.platform === 'win32') return;
   const directory = await mkdtemp(join(tmpdir(), 'agent-launch-timeout-'));
@@ -49,6 +74,35 @@ test('Node host times out without retrying an uncertain open', async () => {
     await chmod(fake, 0o755);
     await assert.rejects(() => requestLauncher(fake, { version: 1, action: 'open' }, { timeoutMs: 50 }),
       error => error.code === 'unknown_outcome');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('createLauncher binds the executable and config for every call', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'agent-launch-facade-'));
+  try {
+    const configPath = join(directory, 'launcher.json');
+    await writeFile(configPath, JSON.stringify({
+      schemaVersion: 1,
+      preferences: { macosTerminal: 'iterm' },
+      clients: { cursor: { enabled: false }, 'example-cli': { name: 'Example', launch: { command: ['example', '--resume', '{id}'] } } },
+    }));
+    const launcher = createLauncher({ executable: binary, configPath });
+    assert.equal(await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' }), 'claude-desktop');
+    const clients = await launcher.clients();
+    assert.equal(clients.find(c => c.id === 'cursor').enabled, false);
+    assert.equal(clients.find(c => c.id === 'example-cli').name, 'Example');
+    const { plan } = await launcher.inspect({
+      client: 'example-cli', conversationId: 'session-7',
+      workspacePath: process.platform === 'win32' ? 'C:\\workspace' : '/workspace',
+    });
+    assert.deepEqual(plan.arguments, ['--resume', 'session-7']);
+    await assert.rejects(() => launcher.inspect({ client: 'cursor', conversationId: 'bc-1' }),
+      error => error.code === 'client_disabled');
+    await writeFile(configPath, '{"schemaVersion":1,"clients":{"opencode":{}}}');
+    await assert.rejects(() => launcher.clients(),
+      error => error.code === 'invalid_configuration' && error.message.startsWith('$.clients.opencode:'));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

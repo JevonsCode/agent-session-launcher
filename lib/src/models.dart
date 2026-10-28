@@ -53,3 +53,113 @@ final class LaunchPlan {
     if (workspacePath != null) 'workspacePath': workspacePath,
   };
 }
+
+enum MacosTerminal {
+  terminal('terminal'),
+  iterm('iterm');
+
+  const MacosTerminal(this.value);
+  final String value;
+}
+
+enum ITermOpenMode {
+  newWindow('new-window'),
+  newTab('new-tab');
+
+  const ITermOpenMode(this.value);
+  final String value;
+}
+
+/// How an interactive CLI session is opened. Unset fields fall back, in order,
+/// to the client's configuration, the host configuration and built-in defaults.
+final class LaunchPreferences {
+  const LaunchPreferences({this.macosTerminal, this.itermOpenMode});
+
+  /// Parses the `preferences` object shared by requests and configuration.
+  factory LaunchPreferences.fromJson(
+    Object? value, {
+    String path = 'preferences',
+    String code = 'invalid_preferences',
+  }) {
+    Never fail(String reason) =>
+        throw SessionLaunchException(code, '$path: $reason');
+    if (value is! Map<String, Object?>) fail('must be an object.');
+    for (final String key in value.keys) {
+      if (key != 'macosTerminal' && key != 'itermOpenMode') {
+        fail('unsupported field "$key".');
+      }
+    }
+    MacosTerminal? terminal;
+    if (value.containsKey('macosTerminal')) {
+      terminal =
+          MacosTerminal.values
+              .where((t) => t.value == value['macosTerminal'])
+              .firstOrNull ??
+          fail('macosTerminal must be "terminal" or "iterm".');
+    }
+    ITermOpenMode? mode;
+    if (value.containsKey('itermOpenMode')) {
+      mode =
+          ITermOpenMode.values
+              .where((m) => m.value == value['itermOpenMode'])
+              .firstOrNull ??
+          fail('itermOpenMode must be "new-window" or "new-tab".');
+    }
+    return LaunchPreferences(macosTerminal: terminal, itermOpenMode: mode);
+  }
+
+  final MacosTerminal? macosTerminal;
+  final ITermOpenMode? itermOpenMode;
+
+  /// Returns these preferences with unset fields taken from [fallback].
+  LaunchPreferences over(LaunchPreferences? fallback) => LaunchPreferences(
+    macosTerminal: macosTerminal ?? fallback?.macosTerminal,
+    itermOpenMode: itermOpenMode ?? fallback?.itermOpenMode,
+  );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    if (macosTerminal != null) 'macosTerminal': macosTerminal!.value,
+    if (itermOpenMode != null) 'itermOpenMode': itermOpenMode!.value,
+  };
+}
+
+/// A host-facing summary of one client, suitable for a settings screen.
+final class ClientInfo {
+  const ClientInfo({
+    required this.id,
+    required this.name,
+    required this.enabled,
+    required this.builtin,
+    required this.openSupported,
+    this.kind,
+    this.idSource,
+    this.idFormat,
+  });
+
+  final String id;
+  final String name;
+  final bool enabled;
+  final bool builtin;
+
+  /// `cli`, `uri`, or null for an identity without a verified opening method.
+  final String? kind;
+  final String? idSource;
+  final String? idFormat;
+
+  /// The platform has an opener for [kind]; it does not prove the app exists.
+  final bool openSupported;
+
+  bool get requiresWorkspace => kind == 'cli';
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'name': name,
+    'enabled': enabled,
+    'builtin': builtin,
+    'kind': kind,
+    if (idSource != null) 'idSource': idSource,
+    if (idFormat != null) 'idFormat': idFormat,
+    'requiresWorkspace': requiresWorkspace,
+    'openSupported': openSupported,
+  };
+}

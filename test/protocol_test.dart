@@ -20,6 +20,35 @@ void main() {
     },
   );
 
+  test('clients lists configured clients without ambiguous labels', () async {
+    final result = await handleRequest(
+      <String, Object?>{'version': 1, 'action': 'clients'},
+      launcher: SessionLauncher(
+        operatingSystem: 'macos',
+        config: LauncherConfig.fromJson(<String, Object?>{
+          'schemaVersion': 1,
+          'clients': <String, Object?>{
+            'cursor': <String, Object?>{'enabled': false},
+          },
+        }),
+      ),
+    );
+    expect(result['ok'], isTrue);
+    final clients = (result['clients']! as List<Object?>)
+        .cast<Map<String, Object?>>();
+    expect(clients.map((c) => c['id']), isNot(contains('codex')));
+    expect(clients.singleWhere((c) => c['id'] == 'cursor')['enabled'], isFalse);
+    final rejected = await handleRequest(<String, Object?>{
+      'version': 1,
+      'action': 'clients',
+      'filter': 'cli',
+    });
+    expect(
+      (rejected['error']! as Map<String, Object?>)['code'],
+      'invalid_request',
+    );
+  });
+
   test(
     'inspect returns an argument vector and never performs an open',
     () async {

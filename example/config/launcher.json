@@ -1,0 +1,13 @@
+{
+  "$schema": "../../docs/config.schema.json",
+  "schemaVersion": 1,
+  "preferences": { "macosTerminal": "iterm", "itermOpenMode": "new-tab" },
+  "clients": {
+    "opencode-cli": {
+      "aliases": ["OpenCode Terminal"],
+      "launch": { "command": ["opencode", "--session", "{id}"] }
+    },
+    "pi": { "preferences": { "macosTerminal": "terminal" } },
+    "windsurf": { "enabled": false }
+  }
+}

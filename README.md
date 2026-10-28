@@ -35,28 +35,33 @@ Claude Desktop 深链来自本机行为验证，不是这里所能保证的公�
 
 ## 构建与使用
 
-需要 Dart SDK 3.10 或更高版本。Flutter/Dart 应用可以通过 Git 依赖导入本包；
-包尚未发布到 pub.dev：
+需要 Dart SDK 3.10 或更高版本。DingDong、FULI 等宿主的完整接入步骤与现有设置
+的字段对应见 [接入指南](docs/integration.md)。
+
+Flutter/Dart 应用通过 Git 依赖进程内调用（包尚未发布到 pub.dev）：
 
 ```yaml
 dependencies:
   agent_session_launcher:
-    git: https://github.com/JevonsCode/JVS-A-agent-session-launcher.git
+    git:
+      url: https://github.com/JevonsCode/agent-session-launcher.git
+      ref: <commit-or-tag>
 ```
 
 ```dart
 import 'package:agent_session_launcher/agent_session_launcher.dart';
 
-final launcher = SessionLauncher();
+final launcher = SessionLauncher(config: LauncherConfig.decode(configText));
+final client = launcher.classify('Claude Code', claudeEntrypoint: 'claude-desktop');
 final target = SessionTarget(
-  client: 'claude-desktop',
+  client: client,
   hostSessionId: 'local_example', // 示例：使用宿主实际保存的 ID
 );
 final plan = launcher.inspect(target); // 不启动任何程序
 // 用户明确选择打开时，宿主再调用 launcher.open(target)。
 ```
 
-Node.js 宿主可先为目标平台构建可执行文件，再使用无依赖的绑定：
+Node.js 宿主先为目标平台构建可执行文件，再使用无依赖的绑定：
 
 ```sh
 dart pub get
@@ -65,20 +70,46 @@ dart compile exe bin/agent_session_launcher.dart -o build/agent-session-launcher
 ```
 
 ```javascript
-import { requestLauncher } from './bindings/node/index.mjs';
+import { createLauncher } from './bindings/node/index.mjs';
 
-const result = await requestLauncher('/absolute/path/to/agent-session-launcher', {
-  version: 1,
-  action: 'classify',
-  source: 'Claude Code',
-  claudeEntrypoint: 'claude-desktop',
+const launcher = createLauncher({
+  executable: '/absolute/path/to/agent-session-launcher',
+  configPath: '/absolute/path/to/launcher.json', // 可选
 });
-// { version: 1, ok: true, client: 'claude-desktop' }
+await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' });
+// 'claude-desktop'；失败时以带 code 的 Error 拒绝
 ```
 
-可执行文件一次从 stdin 读取一个 JSON 对象，输出一个 JSON 对象后退出；协议及
-错误码见 [协议说明](docs/protocol.md)。构建物与宿主系统、CPU 架构匹配，不能把
-macOS 构建物当作 Windows/Linux 二进制分发。仓库当前不附带预编译发布包。
+可执行文件一次从 stdin 读取一个 JSON 对象，输出一个 JSON 对象后退出；动作
+`classify`、`clients`、`inspect`、`open` 及错误码见 [协议说明](docs/protocol.md)。
+构建物与宿主系统、CPU 架构匹配，不能把 macOS 构建物当作 Windows/Linux 二进制
+分发。仓库当前不附带预编译发布包。
+
+## 配置
+
+内置客户端就是一份默认配置（[`lib/src/catalog.dart`](lib/src/catalog.dart)）。宿主
+用同样的格式写一份本机可信 JSON，按客户端 ID 合并：可以停用客户端、改名、追加
+来源标签、替换打开方式、新增客户端，以及设置全局或单个客户端的终端偏好。
+
+```json
+{
+  "schemaVersion": 1,
+  "preferences": { "macosTerminal": "iterm", "itermOpenMode": "new-tab" },
+  "clients": {
+    "cursor": { "enabled": false },
+    "opencode-cli": { "launch": { "command": ["opencode", "--session", "{id}"] } },
+    "example-desktop": {
+      "name": "Example Desktop",
+      "launch": { "uri": "example://session/open?id={id}" }
+    }
+  }
+}
+```
+
+配置可以指定要启动的本机程序，只能来自宿主自己的本机配置；会话请求不能指定配置
+路径、命令或深链。配置作为整体校验，出错时返回 `invalid_configuration` 和出错的
+JSON 路径，不会部分生效。字段、合并规则和不可放宽的约束见
+[宿主配置](docs/configuration.md)，编辑器可使用 [JSON Schema](docs/config.schema.json)。
 
 ## 宿主集成边界
 

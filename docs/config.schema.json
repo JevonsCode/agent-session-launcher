@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Session Launcher host configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "preferences": { "$ref": "#/$defs/preferences" },
+    "clients": {
+      "type": "object",
+      "maxProperties": 128,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]{0,63}$" },
+      "additionalProperties": { "$ref": "#/$defs/client" }
+    }
+  },
+  "$defs": {
+    "preferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "macosTerminal": { "enum": ["terminal", "iterm"] },
+        "itermOpenMode": { "enum": ["new-window", "new-tab"] }
+      }
+    },
+    "client": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "enabled": { "type": "boolean" },
+        "aliases": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        },
+        "launch": { "oneOf": [{ "$ref": "#/$defs/command" }, { "$ref": "#/$defs/uri" }] },
+        "preferences": { "$ref": "#/$defs/preferences" }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "command": {
+          "description": "Program name followed by fixed arguments; exactly one argument is \"{id}\".",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 33,
+          "prefixItems": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }],
+          "items": { "type": "string", "pattern": "^(\\{id\\}|[A-Za-z0-9._:/+=,-]{1,256})$" }
+        },
+        "idFormat": { "enum": ["safe", "uuid"] }
+      }
+    },
+    "uri": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri"],
+      "properties": {
+        "uri": {
+          "description": "scheme://host/path?key=value with \"{id}\" exactly once as a whole path segment or query value. Web, file and script schemes are rejected.",
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^[a-z][a-z0-9+.-]{0,31}://[a-z0-9][a-z0-9.-]{0,127}(/[^?#]*)?(\\?[^#]*)?$"
+        },
+        "idSource": { "enum": ["conversationId", "hostSessionId"] },
+        "idFormat": { "enum": ["safe", "uuid", "claude-desktop", "cursor-background"] }
+      }
+    }
+  }
+}
