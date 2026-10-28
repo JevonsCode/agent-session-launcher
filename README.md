@@ -1,0 +1,112 @@
+# Agent Session Launcher
+
+本地 Agent 会话打开组件，可供 Flutter/Dart 应用和 Node.js 宿主复用。它接收一个
+**已由宿主确认来源的会话目标**，生成固定的深链或 CLI 参数；只有显式请求 `open`
+时才会尝试调用操作系统打开会话。它不保存会话、不运行模型、不向 Agent 发送消息，
+也不提供 HTTP 服务。
+
+This is a local interactive session launcher with a Dart API and a one-shot JSON
+protocol for Node.js and other hosts. Background Agent execution is out of scope.
+
+## 支持范围
+
+| 明确的客户端 | 目标 | 方式 |
+| --- | --- | --- |
+| `claude-desktop` | Desktop 的 `hostSessionId` | `claude://code/continue` |
+| `codex-desktop` | 完整 UUID | `codex://threads/` |
+| `cursor` | `bc-` 后台 Agent ID | Cursor 深链 |
+| `claude-code`, `gemini-cli`, `copilot-cli`, `grok-build` | 会话 ID 和工作目录 | 各客户端的 CLI 恢复命令 |
+| `pi`, `codex-cli` | 完整 UUID 和工作目录 | 各客户端的 CLI 恢复命令 |
+| `opencode-cli`, `antigravity-cli`, `kiro-cli` | 会话 ID 和工作目录 | 各客户端的 CLI 恢复命令 |
+
+`codex`、`claude-code-unknown`、`opencode`、`opencode-desktop`、通用
+`antigravity`、Antigravity App/IDE、通用 Copilot 和 Windsurf 不会被猜成 CLI。
+分类时，单独的 `Claude Code` 不足以区分 Desktop 与 CLI；有明确的 Desktop
+entrypoint 时归为 `claude-desktop`，有明确的 `Claude Code CLI` 来源时归为 CLI。
+OpenCode 的某些事件也不区分 Desktop 和 CLI，宿主必须先取得可靠来源。
+
+macOS CLI 使用 Terminal 或 iTerm；Windows 使用 Windows Terminal。Linux 可以
+生成 CLI 计划，但目前没有实现交互式终端打开。URI 路径在 macOS、Windows、Linux
+分别请求系统打开；这些能力仍依赖客户端和对应系统组件实际安装。
+
+Claude Desktop 深链来自本机行为验证，不是这里所能保证的公开稳定契约。组件不识别、
+保存或切换登录账号，打开时使用目标客户端当前的登录状态与配置。`inspect` 的
+`openSupported` 只表示当前平台有实现，并不验证应用、账号或会话存在。
+
+## 构建与使用
+
+需要 Dart SDK 3.10 或更高版本。Flutter/Dart 应用可以通过 Git 依赖导入本包；
+包尚未发布到 pub.dev：
+
+```yaml
+dependencies:
+  agent_session_launcher:
+    git: https://github.com/JevonsCode/JVS-A-agent-session-launcher.git
+```
+
+```dart
+import 'package:agent_session_launcher/agent_session_launcher.dart';
+
+final launcher = SessionLauncher();
+final target = SessionTarget(
+  client: 'claude-desktop',
+  hostSessionId: 'local_example', // 示例：使用宿主实际保存的 ID
+);
+final plan = launcher.inspect(target); // 不启动任何程序
+// 用户明确选择打开时，宿主再调用 launcher.open(target)。
+```
+
+Node.js 宿主可先为目标平台构建可执行文件，再使用无依赖的绑定：
+
+```sh
+dart pub get
+mkdir -p build
+dart compile exe bin/agent_session_launcher.dart -o build/agent-session-launcher
+```
+
+```javascript
+import { requestLauncher } from './bindings/node/index.mjs';
+
+const result = await requestLauncher('/absolute/path/to/agent-session-launcher', {
+  version: 1,
+  action: 'classify',
+  source: 'Claude Code',
+  claudeEntrypoint: 'claude-desktop',
+});
+// { version: 1, ok: true, client: 'claude-desktop' }
+```
+
+可执行文件一次从 stdin 读取一个 JSON 对象，输出一个 JSON 对象后退出；协议及
+错误码见 [协议说明](docs/protocol.md)。构建物与宿主系统、CPU 架构匹配，不能把
+macOS 构建物当作 Windows/Linux 二进制分发。仓库当前不附带预编译发布包。
+
+## 宿主集成边界
+
+- 宿主负责验证来源和会话归属，再传入明确的 `client`；本组件不会通过扫描其他
+  产品的数据猜测账号或迁移历史记录。
+- 只允许受信任的本机交互触发 `open`。若 Web 应用需要它，必须由自己的本地服务
+  验证用户操作和请求权限；本项目不暴露可由网页直接调用的开放接口。
+- JSON 请求不接受可执行文件路径、命令、任意 URL、环境变量或凭据。命令和参数由
+  组件的固定映射生成。Node 绑定的可执行文件路径是宿主自己的本地配置。
+- `launch_requested` 只表示系统接受了启动请求，不代表客户端完成登录或恢复成功。
+  超时可能产生不确定结果，宿主不得自动重试一次可能已经打开的会话。
+- FULI 的后台 Agent 唤醒、授权、消息和结果处理是另一套能力；本组件不取代它。
+  FULI 的 OpenCode 生命周期插件也不等同于“打开原会话”，两个宿主需要各自完成
+  接线与验收。本仓库不会修改现有 DingDong 或 FULI 配置。
+
+## 验证
+
+```sh
+dart test
+dart analyze
+AGENT_SESSION_LAUNCHER_BIN="$PWD/build/agent-session-launcher" node --test test/node_binding_test.mjs
+```
+
+可选的真实 Pi 测试需要将 `PI_EXECUTABLE` 指向本机 Pi；测试使用临时目录、离线
+RPC 和合成会话，不发送模型请求。当前实测覆盖 macOS、Node.js 和本机 Pi；Windows
+路径及调用方式仅有自动化模拟，尚未在 Windows 真机验证。
+
+客户端参考：[OpenCode CLI](https://opencode.ai/docs/cli/)、
+[Antigravity CLI](https://antigravity.google/docs/cli/commands/resume)、
+[GitHub Copilot CLI](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference)、
+[Grok Build CLI](https://docs.x.ai/build/cli/reference)。

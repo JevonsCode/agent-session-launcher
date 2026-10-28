@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Session Launcher request",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "action", "source"],
+      "properties": {
+        "version": { "const": 1 },
+        "action": { "const": "classify" },
+        "source": { "type": "string", "minLength": 1 },
+        "claudeEntrypoint": { "type": "string" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "action", "target"],
+      "properties": {
+        "version": { "const": 1 },
+        "action": { "enum": ["inspect", "open"] },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["client"],
+          "properties": {
+            "client": { "type": "string", "minLength": 1 },
+            "conversationId": { "type": "string", "maxLength": 256 },
+            "workspacePath": { "type": "string", "maxLength": 4096 },
+            "hostSessionId": { "type": "string", "maxLength": 70 }
+          }
+        },
+        "preferences": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "macosTerminal": { "enum": ["terminal", "iterm"] },
+            "itermOpenMode": { "enum": ["new-window", "new-tab"] }
+          }
+        }
+      }
+    }
+  ]
+}
