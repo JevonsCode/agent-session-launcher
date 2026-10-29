@@ -281,24 +281,20 @@ void main() {
       expect(readExtensionDirectory('${temp.path}/missing'), isEmpty);
     });
 
-    test(
-      'refuses files and directories other users can write',
-      () async {
-        final File file = File('${temp.path}/open.json')
-          ..writeAsStringSync('{"schemaVersion":1}');
-        await Process.run('chmod', <String>['666', file.path]);
-        expect(
-          readExtensionDirectory(temp.path).single.error,
-          'The file is writable by other users.',
-        );
-        await Process.run('chmod', <String>['777', temp.path]);
-        expect(
-          readExtensionDirectory(temp.path).single.error,
-          'The extensions directory is writable by other users.',
-        );
-      },
-      skip: Platform.isWindows ? 'POSIX permissions only.' : false,
-    );
+    test('refuses files and directories other users can write', () async {
+      final File file = File('${temp.path}/open.json')
+        ..writeAsStringSync('{"schemaVersion":1}');
+      await Process.run('chmod', <String>['666', file.path]);
+      expect(
+        readExtensionDirectory(temp.path).single.error,
+        'The file is writable by other users.',
+      );
+      await Process.run('chmod', <String>['777', temp.path]);
+      expect(
+        readExtensionDirectory(temp.path).single.error,
+        'The extensions directory is writable by other users.',
+      );
+    }, skip: Platform.isWindows ? 'POSIX permissions only.' : false);
 
     test('the shipped examples load cleanly', () {
       final LauncherConfig config = LauncherConfig.load(
