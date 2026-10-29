@@ -3,13 +3,23 @@
 宿主只需要做三件事：
 
 1. **提供配置**：把宿主自己的设置转换成一份 [宿主配置](configuration.md)，或直接
-   不传，使用内置默认值。
+   不传，使用内置默认值；同时传入用户的 [本机扩展](extensions.md) 目录。
 2. **识别来源**：用 `classify` 把 hook / 事件里的来源标签变成明确的客户端 ID，
    与会话 ID、工作目录一起保存。
 3. **打开会话**：展示前用 `inspect` 判断能否打开；用户明确点击后再调用 `open`。
 
 设置页可以用 `clients` 列出所有明确的客户端，包含名称、是否启用、打开类型、
 需要哪种 ID、是否需要工作目录，以及当前平台是否实现了打开方式。
+
+## 本机扩展
+
+两个宿主都读取同一个默认目录，用户写一次即可在两边生效。设置页建议：
+
+- `origin` 为 `extension` 的客户端标“本机扩展”；内置客户端带 `extensionFile` 时标
+  “已自定义”。
+- `extensionErrors` 非空时列出文件名和原因。
+- 提供“打开扩展目录”（不存在时创建）和 [扩展说明](extensions.md) 的链接。
+- 在打开设置页、渲染“打开会话”按钮和执行 `open` 前重新读取，不需要监听文件。
 
 本组件不负责：会话的保存和归属校验、用户授权、Codex 子 Agent 判断这类宿主
 特有的预检，以及只打开工作目录（不恢复具体会话）的行为。这些继续留在宿主里。
@@ -29,10 +39,12 @@ dependencies:
 ```dart
 import 'package:agent_session_launcher/agent_session_launcher.dart';
 
-final LauncherConfig config = await configFile.exists()
-    ? LauncherConfig.decode(await configFile.readAsString())
-    : LauncherConfig.defaults;
+final LauncherConfig config = LauncherConfig.load(
+  hostConfig: await configFile.exists() ? await configFile.readAsString() : null,
+  extensionsDirectory: defaultExtensionsDirectory(),
+);
 final SessionLauncher launcher = SessionLauncher(config: config);
+// 设置页：launcher.clients()，跳过的扩展文件见 config.extensionErrors。
 
 // 记录活动时
 final String client = launcher.classify(source, claudeEntrypoint: entrypoint);
@@ -82,15 +94,16 @@ dart compile exe bin/agent_session_launcher.dart -o build/agent-session-launcher
 ```
 
 ```javascript
-import { createLauncher } from './vendor/agent-session-launcher/index.mjs';
+import { createLauncher, defaultExtensionsDirectory } from './vendor/agent-session-launcher/index.mjs';
 
 const launcher = createLauncher({
   executable: '/absolute/path/to/agent-session-launcher',
   configPath: '/absolute/path/to/fuli-launcher.json', // 可选，由宿主维护
+  extensionsDir: defaultExtensionsDirectory(), // 用户本机扩展
 });
 
 const client = await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' });
-const clients = await launcher.clients(); // 设置页
+const { clients, extensionErrors } = await launcher.clients(); // 设置页
 const { plan, openSupported } = await launcher.inspect(target);
 await launcher.open(target); // 仅在用户明确操作后
 ```

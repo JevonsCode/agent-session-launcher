@@ -45,11 +45,11 @@
       "required": ["command"],
       "properties": {
         "command": {
-          "description": "Program name followed by fixed arguments; exactly one argument is \"{id}\".",
+          "description": "Program name, absolute path or ~/ path, followed by fixed arguments; exactly one argument is \"{id}\".",
           "type": "array",
           "minItems": 2,
           "maxItems": 33,
-          "prefixItems": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }],
+          "prefixItems": [{ "type": "string", "pattern": "^([A-Za-z0-9][A-Za-z0-9._-]{0,127}|(~[\\\\/]|/|[A-Za-z]:[\\\\/])[A-Za-z0-9._+@ ()\\\\/-]{1,1020})$" }],
           "items": { "type": "string", "pattern": "^(\\{id\\}|[A-Za-z0-9._:/+=,-]{1,256})$" }
         },
         "idFormat": { "enum": ["safe", "uuid"] }

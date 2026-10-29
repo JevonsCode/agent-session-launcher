@@ -51,7 +51,12 @@ dependencies:
 ```dart
 import 'package:agent_session_launcher/agent_session_launcher.dart';
 
-final launcher = SessionLauncher(config: LauncherConfig.decode(configText));
+final launcher = SessionLauncher(
+  config: LauncherConfig.load(
+    hostConfig: configText, // 可选
+    extensionsDirectory: defaultExtensionsDirectory(), // 用户本机扩展
+  ),
+);
 final client = launcher.classify('Claude Code', claudeEntrypoint: 'claude-desktop');
 final target = SessionTarget(
   client: client,
@@ -70,11 +75,12 @@ dart compile exe bin/agent_session_launcher.dart -o build/agent-session-launcher
 ```
 
 ```javascript
-import { createLauncher } from './bindings/node/index.mjs';
+import { createLauncher, defaultExtensionsDirectory } from './bindings/node/index.mjs';
 
 const launcher = createLauncher({
   executable: '/absolute/path/to/agent-session-launcher',
   configPath: '/absolute/path/to/launcher.json', // 可选
+  extensionsDir: defaultExtensionsDirectory(), // 可选，用户本机扩展
 });
 await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' });
 // 'claude-desktop'；失败时以带 code 的 Error 拒绝
@@ -88,7 +94,7 @@ await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' });
 ## 配置
 
 内置客户端就是一份默认配置（[`lib/src/catalog.dart`](lib/src/catalog.dart)）。宿主
-用同样的格式写一份本机可信 JSON，按客户端 ID 合并：可以停用客户端、改名、追加
+用同样的格式写一份本机可信 JSON，在本机扩展之后按客户端 ID 合并：可以停用客户端、改名、追加
 来源标签、替换打开方式、新增客户端，以及设置全局或单个客户端的终端偏好。
 
 ```json
@@ -106,7 +112,22 @@ await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' });
 }
 ```
 
-配置可以指定要启动的本机程序，只能来自宿主自己的本机配置；会话请求不能指定配置
+用户本机的私有 Agent（内部 CLI、包装脚本、私有桌面应用）不需要宿主改设置：在
+`~/.config/agent-session-launcher/clients/`（Windows 为
+`%APPDATA%\agent-session-launcher\clients\`）放一个 `<客户端 ID>.json`，所有接入的
+宿主都会识别。一个文件出错只跳过该文件，可以用 `agent-session-launcher check
+<文件>` 自查，见 [本机扩展](docs/extensions.md)。
+
+```json
+{
+  "schemaVersion": 1,
+  "name": "Acme Agent",
+  "aliases": ["Acme Agent CLI"],
+  "launch": { "command": ["~/bin/acme-agent", "resume", "{id}"] }
+}
+```
+
+配置和扩展可以指定要启动的本机程序，只能来自宿主自己的本机配置或用户自己的文件；会话请求不能指定配置
 路径、命令或深链。配置作为整体校验，出错时返回 `invalid_configuration` 和出错的
 JSON 路径，不会部分生效。字段、合并规则和不可放宽的约束见
 [宿主配置](docs/configuration.md)，编辑器可使用 [JSON Schema](docs/config.schema.json)。

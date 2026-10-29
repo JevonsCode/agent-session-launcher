@@ -1,7 +1,9 @@
 # 宿主配置
 
 内置客户端本身就是一份默认配置（[`lib/src/catalog.dart`](../lib/src/catalog.dart)），
-宿主配置用**同一种格式**，按客户端 ID 合并在它上面。不传配置时只使用内置默认值。
+用户手写的 [本机扩展](extensions.md) 先合并在它上面，宿主配置用**同一种格式**
+最后按客户端 ID 合并。不传配置时只使用内置默认值和本机扩展（如果宿主读取了
+扩展目录）。
 编辑器可引用 [config.schema.json](config.schema.json) 获得补全；完整示例见
 [example/config/launcher.json](../example/config/launcher.json)。
 
@@ -43,8 +45,10 @@
 
 ## 打开方式
 
-**CLI**：`command` 是程序名加固定参数，参数中恰好有一个元素是 `{id}`，运行时只
-替换这一项。程序名不能是路径；参数不能包含 Shell 语法；工作目录来自会话目标。
+**CLI**：`command` 是程序加固定参数，参数中恰好有一个元素是 `{id}`，运行时只
+替换这一项。程序可以是 PATH 中的程序名，也可以是绝对路径或 `~/` 开头的路径
+（打开时展开为当前用户主目录），不能是相对路径或 Shell 文本；参数不能包含 Shell
+语法；工作目录来自会话目标。
 
 ```json
 { "command": ["kiro-cli", "chat", "--resume-id", "{id}"], "idFormat": "safe" }
@@ -65,7 +69,7 @@
 
 ## 不可放宽的约束
 
-覆盖内置客户端时：
+覆盖内置客户端时（本机扩展和宿主配置相同，始终以内置定义为准）：
 
 - 不能改变打开类型，例如不能把 Codex Desktop 改成 CLI。
 - 不能改变 `idSource`，例如 Claude Desktop 始终使用 `hostSessionId`。
@@ -78,8 +82,9 @@
 
 ## 错误
 
-配置作为整体校验，任何一处错误都返回 `invalid_configuration`，不会部分生效或
-静默回退。错误信息给出 JSON 路径和原因，例如：
+宿主配置作为整体校验，任何一处错误都返回 `invalid_configuration`，不会部分生效或
+静默回退；它先单独校验，所以本机扩展不会让宿主配置失效。本机扩展按文件校验，
+出错的文件被跳过并列在 `extensionErrors` 中。错误信息给出 JSON 路径和原因，例如：
 
 ```text
 $.clients.pi.launch.idFormat: must stay uuid for this client.
@@ -91,4 +96,5 @@ $.clients.example-cli.launch.command: arguments must contain "{id}" exactly once
 配置可以决定启动哪个本机程序，属于**可信输入**。它只能来自宿主自己的本机配置，
 不能由网页、网络请求、未知插件或会话数据提供或修改。会话 JSON 请求不能指定
 配置路径、命令或深链。原生可执行文件每次调用都会重新读取 `--config` 文件（最大
-64 KiB）；Dart 宿主在配置变化后重新构造 `LauncherConfig`。
+64 KiB）和 `--extensions` 目录；Dart 宿主在需要时调用 `LauncherConfig.load` 重新
+构造配置。

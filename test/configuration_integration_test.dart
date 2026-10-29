@@ -113,4 +113,63 @@ void main() {
       );
     },
   );
+
+  test('extensions are read per call and check explains one file', () async {
+    final temp = await Directory.systemTemp.createTemp('launcher-ext-cli-');
+    addTearDown(() => temp.delete(recursive: true));
+    final clients = Directory('${temp.path}/clients')..createSync();
+    final file = File('${clients.path}/acme-agent.json')
+      ..writeAsStringSync(
+        '{"schemaVersion":1,"aliases":["Acme"],'
+        '"launch":{"command":["~/bin/acme","{id}"]}}',
+      );
+    Future<Map<String, Object?>> classify() async {
+      final process = await Process.start(Platform.resolvedExecutable, <String>[
+        'run',
+        'bin/agent_session_launcher.dart',
+        '--extensions',
+        clients.path,
+      ]);
+      process.stdin.write(
+        jsonEncode(<String, Object?>{
+          'version': 1,
+          'action': 'classify',
+          'source': 'Acme',
+        }),
+      );
+      await process.stdin.close();
+      final output = await utf8.decoder.bind(process.stdout).join();
+      await process.stderr.drain<void>();
+      await process.exitCode;
+      return jsonDecode(output) as Map<String, Object?>;
+    }
+
+    expect((await classify())['client'], 'acme-agent');
+    final ok = await Process.run(Platform.resolvedExecutable, <String>[
+      'run',
+      'bin/agent_session_launcher.dart',
+      'check',
+      file.path,
+    ]);
+    expect(ok.exitCode, 0);
+    expect(ok.stdout, startsWith('acme-agent.json: OK'));
+    expect(ok.stdout, contains('"origin": "extension"'));
+
+    file.writeAsStringSync(
+      '{"schemaVersion":1,"launch":{"command":["acme","--id"]}}',
+    );
+    expect((await classify())['client'], 'unknown');
+    final bad = await Process.run(Platform.resolvedExecutable, <String>[
+      'run',
+      'bin/agent_session_launcher.dart',
+      'check',
+      file.path,
+    ]);
+    expect(bad.exitCode, 1);
+    expect(
+      bad.stdout,
+      'acme-agent.json: \$.launch.command: arguments must contain "{id}" '
+      'exactly once.\n',
+    );
+  });
 }

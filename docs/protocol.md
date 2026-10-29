@@ -10,9 +10,13 @@ entrypoint signal. It returns a conservative client identity; it does not prove
 which account owns a conversation.
 
 `clients` returns every specific client after configuration: `id`, `name`,
-`enabled`, `builtin`, `kind` (`cli`, `uri`, or `null` when no opening method is
-known), `idSource`, `idFormat`, `requiresWorkspace` and `openSupported`.
-Ambiguous labels such as `codex` or `claude-code-unknown` are omitted.
+`enabled`, `builtin`, `origin` (`builtin`, `extension` or `host`),
+`extensionFile` (the user extension file that defines or customizes it, when
+any), `kind` (`cli`, `uri`, or `null` when no opening method is known),
+`idSource`, `idFormat`, `requiresWorkspace` and `openSupported`. Ambiguous
+labels such as `codex` or `claude-code-unknown` are omitted. The response also
+has `extensionErrors`: `[{ "file": "acme-agent.json", "message": "..." }]` for
+skipped extension files (`file` is absent for a directory problem).
 
 `inspect` checks the structured target and returns `plan` plus `openSupported`.
 Plans are fixed executable/argument vectors or allow-listed URI shapes. This is
@@ -32,7 +36,12 @@ The Node binding can additionally throw `invalid_executable`, `invalid_timeout`,
 after an OS launch was requested; do not automatically repeat it.
 
 The native process optionally accepts `--config /absolute/path/to/config.json`
-from its trusted host and rereads it on every call. The path and client
-definitions are not request fields. An invalid configuration fails every
-request with `invalid_configuration` and a message naming the JSON location.
-See [configuration.md](configuration.md) for the format and trust boundary.
+and `--extensions /absolute/path/to/clients` from its trusted host and rereads
+both on every call. Paths and client definitions are not request fields. An
+invalid host configuration fails every request with `invalid_configuration`
+and a message naming the JSON location; an invalid extension file only skips
+that file. See [configuration.md](configuration.md) and
+[extensions.md](extensions.md).
+
+`agent-session-launcher check <client-id>.json` is a separate human-facing
+command that validates one extension file and exits nonzero on failure.

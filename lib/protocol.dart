@@ -39,6 +39,10 @@ Future<Map<String, Object?>> handleRequest(
         'clients': <Object?>[
           for (final ClientInfo client in service.clients()) client.toJson(),
         ],
+        'extensionErrors': <Object?>[
+          for (final ExtensionProblem problem in service.config.extensionErrors)
+            problem.toJson(),
+        ],
       };
     }
     if (action != 'inspect' && action != 'open') {

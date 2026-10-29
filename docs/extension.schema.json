@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Session Launcher user extension",
+  "description": "One client per file. The file name without .json is the client ID.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "name": { "$ref": "config.schema.json#/$defs/client/properties/name" },
+    "enabled": { "$ref": "config.schema.json#/$defs/client/properties/enabled" },
+    "aliases": { "$ref": "config.schema.json#/$defs/client/properties/aliases" },
+    "launch": { "$ref": "config.schema.json#/$defs/client/properties/launch" },
+    "preferences": { "$ref": "config.schema.json#/$defs/preferences" }
+  }
+}

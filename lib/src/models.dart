@@ -131,6 +131,8 @@ final class ClientInfo {
     required this.enabled,
     required this.builtin,
     required this.openSupported,
+    this.origin = 'builtin',
+    this.extensionFile,
     this.kind,
     this.idSource,
     this.idFormat,
@@ -140,6 +142,12 @@ final class ClientInfo {
   final String name;
   final bool enabled;
   final bool builtin;
+
+  /// Where the client was first defined: `builtin`, `extension` or `host`.
+  final String origin;
+
+  /// The user extension file that defines or customizes this client.
+  final String? extensionFile;
 
   /// `cli`, `uri`, or null for an identity without a verified opening method.
   final String? kind;
@@ -156,6 +164,8 @@ final class ClientInfo {
     'name': name,
     'enabled': enabled,
     'builtin': builtin,
+    'origin': origin,
+    if (extensionFile != null) 'extensionFile': extensionFile,
     'kind': kind,
     if (idSource != null) 'idSource': idSource,
     if (idFormat != null) 'idFormat': idFormat,

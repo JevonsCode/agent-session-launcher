@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdtemp, writeFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createLauncher, requestLauncher } from '../bindings/node/index.mjs';
+import { createLauncher, defaultExtensionsDirectory, requestLauncher } from '../bindings/node/index.mjs';
 
 const binary = process.env.AGENT_SESSION_LAUNCHER_BIN;
 if (!binary) throw new Error('Set AGENT_SESSION_LAUNCHER_BIN to the compiled executable.');
@@ -90,7 +90,8 @@ test('createLauncher binds the executable and config for every call', async () =
     }));
     const launcher = createLauncher({ executable: binary, configPath });
     assert.equal(await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' }), 'claude-desktop');
-    const clients = await launcher.clients();
+    const { clients, extensionErrors } = await launcher.clients();
+    assert.deepEqual(extensionErrors, []);
     assert.equal(clients.find(c => c.id === 'cursor').enabled, false);
     assert.equal(clients.find(c => c.id === 'example-cli').name, 'Example');
     const { plan } = await launcher.inspect({
@@ -106,4 +107,37 @@ test('createLauncher binds the executable and config for every call', async () =
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('createLauncher reads hand-written extension files and reports bad ones', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'agent-launch-extensions-'));
+  try {
+    await writeFile(join(directory, 'acme-agent.json'), JSON.stringify({
+      schemaVersion: 1, name: 'Acme Agent', aliases: ['Acme Agent CLI'],
+      launch: { command: ['acme-agent', 'resume', '{id}'] },
+    }));
+    await writeFile(join(directory, 'broken.json'), '{"schemaVersion":1,"launch":{"command":["broken"]}}');
+    const launcher = createLauncher({ executable: binary, extensionsDir: directory });
+    assert.equal(await launcher.classify('Acme Agent CLI'), 'acme-agent');
+    const { clients, extensionErrors } = await launcher.clients();
+    const acme = clients.find(c => c.id === 'acme-agent');
+    assert.equal(acme.origin, 'extension');
+    assert.equal(acme.extensionFile, 'acme-agent.json');
+    assert.equal(extensionErrors.length, 1);
+    assert.equal(extensionErrors[0].file, 'broken.json');
+    assert.match(extensionErrors[0].message, /^\$\.launch\.command:/);
+    assert.ok(!JSON.stringify(extensionErrors).includes(directory));
+    await assert.rejects(() => createLauncher({ executable: binary, extensionsDir: 'relative' }).clients(),
+      error => error.code === 'invalid_configuration');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('defaultExtensionsDirectory follows each platform convention', () => {
+  assert.equal(defaultExtensionsDirectory({ HOME: '/Users/a' }, 'darwin'), '/Users/a/.config/agent-session-launcher/clients');
+  assert.equal(defaultExtensionsDirectory({ HOME: '/home/a', XDG_CONFIG_HOME: '/x' }, 'linux'), '/x/agent-session-launcher/clients');
+  assert.equal(defaultExtensionsDirectory({ APPDATA: 'C:\\Users\\a\\AppData\\Roaming' }, 'win32'),
+    'C:\\Users\\a\\AppData\\Roaming\\agent-session-launcher\\clients');
+  assert.equal(defaultExtensionsDirectory({}, 'linux'), undefined);
 });

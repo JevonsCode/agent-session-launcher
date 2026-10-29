@@ -1,0 +1,6 @@
+{
+  "$schema": "../../docs/extension.schema.json",
+  "schemaVersion": 1,
+  "name": "Acme Desktop",
+  "launch": { "uri": "acme://sessions/{id}", "idFormat": "uuid" }
+}

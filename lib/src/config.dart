@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'catalog.dart';
+import 'extensions.dart';
 import 'identity.dart';
 import 'models.dart';
 
@@ -103,7 +104,8 @@ final class LaunchSpec {
   }
 }
 
-/// One client after merging the built-in catalog with host configuration.
+/// One client after merging the built-in catalog, user extensions and host
+/// configuration.
 final class ClientDefinition {
   const ClientDefinition({
     required this.id,
@@ -111,6 +113,8 @@ final class ClientDefinition {
     required this.aliases,
     required this.enabled,
     required this.builtin,
+    this.origin = 'builtin',
+    this.extensionFile,
     this.ambiguous = false,
     this.launch,
     this.preferences,
@@ -124,6 +128,12 @@ final class ClientDefinition {
   final bool enabled;
   final bool builtin;
 
+  /// Where the client was first defined: `builtin`, `extension` or `host`.
+  final String origin;
+
+  /// The user extension file that defines or customizes this client.
+  final String? extensionFile;
+
   /// The label is known to cover several surfaces; never openable.
   final bool ambiguous;
 
@@ -132,14 +142,22 @@ final class ClientDefinition {
   final LaunchPreferences? preferences;
 }
 
-/// Host-owned launcher configuration, validated as a whole before use.
+/// Launcher configuration, validated before use.
 ///
-/// The document has the same shape as the built-in catalog. Entries in
-/// `clients` are merged by ID: listed fields replace the built-in value,
-/// `aliases` are added, and unlisted clients keep their defaults. Session
-/// requests can never supply configuration.
+/// Layers merge by client ID in this order: the built-in catalog, user
+/// extension files, then the host configuration. Each layer uses the shape of
+/// the built-in catalog: listed fields replace earlier values, `aliases` are
+/// added, and unlisted clients keep their definitions. A bad host
+/// configuration fails as a whole; a bad extension file only skips that file
+/// and is reported in [extensionErrors]. Session requests never supply
+/// configuration.
 final class LauncherConfig {
-  LauncherConfig._(this.preferences, this._clients, this._aliases);
+  LauncherConfig._(
+    this.preferences,
+    this._clients,
+    this._aliases,
+    this.extensionErrors,
+  );
 
   /// Built-in clients only.
   static final LauncherConfig defaults = LauncherConfig.fromJson(
@@ -147,20 +165,32 @@ final class LauncherConfig {
   );
 
   /// Parses JSON text, e.g. the contents of a trusted local file.
-  factory LauncherConfig.decode(String text) {
-    final Object? json;
-    try {
-      json = jsonDecode(text);
-    } on FormatException {
-      throw const SessionLaunchException(
-        'invalid_configuration',
-        r'$: the configuration is not valid JSON.',
-      );
-    }
-    return LauncherConfig.fromJson(json);
-  }
+  factory LauncherConfig.decode(
+    String text, {
+    List<ExtensionFile> extensions = const <ExtensionFile>[],
+  }) => LauncherConfig.fromJson(
+    _decode(text, r'$', 'the configuration is not valid JSON.'),
+    extensions: extensions,
+  );
 
-  factory LauncherConfig.fromJson(Object? json) {
+  /// Combines optional host configuration text with the extension files in
+  /// [extensionsDirectory], typically [defaultExtensionsDirectory].
+  factory LauncherConfig.load({
+    String? hostConfig,
+    String? extensionsDirectory,
+  }) => LauncherConfig.fromJson(
+    hostConfig == null
+        ? const <String, Object?>{'schemaVersion': 1}
+        : _decode(hostConfig, r'$', 'the configuration is not valid JSON.'),
+    extensions: extensionsDirectory == null
+        ? const <ExtensionFile>[]
+        : readExtensionDirectory(extensionsDirectory),
+  );
+
+  factory LauncherConfig.fromJson(
+    Object? json, {
+    List<ExtensionFile> extensions = const <ExtensionFile>[],
+  }) {
     final Map<String, Object?> root = _object(json, r'$');
     // `$schema` is an editor hint and is ignored.
     _keys(root, const {
@@ -179,44 +209,97 @@ final class LauncherConfig {
             code: 'invalid_configuration',
           )
         : const LaunchPreferences();
-    final builder = _Builder();
-    for (final MapEntry<String, Object?> entry in builtinClients.entries) {
-      builder.add(entry.key, entry.value, 'builtin.${entry.key}', null);
+    final Map<String, Object?> hostClients = root.containsKey('clients')
+        ? _object(root['clients'], r'$.clients')
+        : const <String, Object?>{};
+    if (hostClients.length > 128) {
+      _fail(r'$.clients', 'has too many entries.');
     }
-    if (root.containsKey('clients')) {
-      final Map<String, Object?> clients = _object(
-        root['clients'],
+    if (!hostClients.keys.every(_clientId.hasMatch)) {
+      _fail(
         r'$.clients',
+        'client IDs use lowercase letters, digits and hyphens '
+            '(at most 64 characters).',
       );
-      if (clients.length > 128) _fail(r'$.clients', 'has too many entries.');
-      for (final MapEntry<String, Object?> entry in clients.entries) {
-        final String id = entry.key;
-        final String path = '\$.clients.$id';
-        if (!_clientId.hasMatch(id)) {
-          _fail(
-            r'$.clients',
-            'client IDs use lowercase letters, digits and hyphens '
-                '(at most 64 characters).',
-          );
-        }
-        final ClientDefinition? base = builder.clients[id];
-        if (base != null && base.ambiguous) {
-          _fail(
-            path,
-            'this label covers several surfaces and cannot be configured; '
-            'configure a specific client instead.',
-          );
-        }
-        if (base == null && builder.aliases.containsKey(id)) {
-          _fail(path, 'the ID is already a source label of another client.');
-        }
-        builder.add(id, entry.value, path, base);
+    }
+
+    // The host configuration is validated on its own first, so an extension
+    // can never make it fail; source labels it claims win over extensions.
+    final _Builder builtins = _Builder.builtins();
+    final _Builder hostOnly = builtins.copy();
+    for (final MapEntry<String, Object?> entry in hostClients.entries) {
+      hostOnly.merge(entry.key, entry.value, '\$.clients.${entry.key}', 'host');
+    }
+    final Map<String, String> hostLabels = hostOnly.labelsAddedTo(builtins);
+
+    final List<ExtensionProblem> problems = <ExtensionProblem>[];
+    final List<_Extension> candidates = <_Extension>[];
+    for (final ExtensionFile file in extensions) {
+      if (file.text == null) {
+        problems.add(ExtensionProblem(file.name, file.error!));
+        continue;
       }
+      try {
+        final _Extension extension = _Extension.parse(file, builtins);
+        final String? taken = extension.labels
+            .where(
+              (label) => (hostLabels[label] ?? extension.id) != extension.id,
+            )
+            .firstOrNull;
+        if (taken != null) {
+          _fail(
+            r'$',
+            '"$taken" already identifies "${hostLabels[taken]}" in the host '
+                'configuration.',
+          );
+        }
+        candidates.add(extension);
+      } on SessionLaunchException catch (error) {
+        problems.add(ExtensionProblem(file.name, error.message));
+      }
+    }
+    // Two files claiming one label are both skipped, so the result never
+    // depends on file order.
+    final Map<String, List<String>> owners = <String, List<String>>{};
+    for (final _Extension extension in candidates) {
+      for (final String label in extension.labels) {
+        (owners[label] ??= <String>[]).add(extension.file);
+      }
+    }
+    final _Builder builder = builtins.copy();
+    for (final _Extension extension in candidates) {
+      final String? shared = extension.labels
+          .where((label) => owners[label]!.length > 1)
+          .firstOrNull;
+      if (shared != null) {
+        final String other = owners[shared]!.firstWhere(
+          (file) => file != extension.file,
+        );
+        problems.add(
+          ExtensionProblem(
+            extension.file,
+            r'$: '
+            '"$shared" is also claimed by $other; both files are skipped.',
+          ),
+        );
+        continue;
+      }
+      builder.merge(
+        extension.id,
+        extension.client,
+        r'$',
+        'extension',
+        file: extension.file,
+      );
+    }
+    for (final MapEntry<String, Object?> entry in hostClients.entries) {
+      builder.merge(entry.key, entry.value, '\$.clients.${entry.key}', 'host');
     }
     return LauncherConfig._(
       preferences,
       Map<String, ClientDefinition>.unmodifiable(builder.clients),
       Map<String, String>.unmodifiable(builder.aliases),
+      List<ExtensionProblem>.unmodifiable(problems),
     );
   }
 
@@ -224,6 +307,9 @@ final class LauncherConfig {
   final LaunchPreferences preferences;
   final Map<String, ClientDefinition> _clients;
   final Map<String, String> _aliases;
+
+  /// Extension files that were skipped, for display in a settings screen.
+  final List<ExtensionProblem> extensionErrors;
 
   /// Every known identity, built-ins first, including ambiguous ones.
   Iterable<ClientDefinition> get clients => _clients.values;
@@ -244,12 +330,120 @@ final class LauncherConfig {
   }
 }
 
-final class _Builder {
-  final Map<String, ClientDefinition> clients = <String, ClientDefinition>{};
-  final Map<String, String> aliases = <String, String>{};
+/// One extension file that is valid on top of the built-in catalog.
+final class _Extension {
+  _Extension._(this.file, this.id, this.client, this.labels);
 
-  void add(String id, Object? raw, String path, ClientDefinition? base) {
-    final bool catalog = path.startsWith('builtin.');
+  factory _Extension.parse(ExtensionFile source, _Builder builtins) {
+    final String file = source.name!;
+    final String id = file.endsWith('.json')
+        ? file.substring(0, file.length - '.json'.length)
+        : '';
+    if (!_clientId.hasMatch(id)) {
+      _fail(
+        r'$',
+        'the file name must be a client ID: lowercase letters, digits and '
+            'hyphens (at most 64 characters) followed by .json.',
+      );
+    }
+    final Map<String, Object?> json = _object(
+      _decode(source.text!, r'$', 'the file is not valid JSON.'),
+      r'$',
+    );
+    if (json['schemaVersion'] != 1) {
+      _fail(r'$.schemaVersion', 'must be 1.');
+    }
+    final Map<String, Object?> client = <String, Object?>{
+      for (final MapEntry<String, Object?> entry in json.entries)
+        if (entry.key != r'$schema' && entry.key != 'schemaVersion')
+          entry.key: entry.value,
+    };
+    final _Builder trial = builtins.copy()
+      ..merge(id, client, r'$', 'extension', file: file);
+    return _Extension._(
+      file,
+      id,
+      client,
+      trial.labelsAddedTo(builtins).keys.toSet(),
+    );
+  }
+
+  final String file;
+  final String id;
+  final Map<String, Object?> client;
+
+  /// Source labels this file adds to the catalog, including a new ID.
+  final Set<String> labels;
+}
+
+final class _Builder {
+  _Builder._(this.clients, this.aliases, this.catalogLaunch);
+
+  /// The built-in catalog, which is the only layer that may mark a client
+  /// `ambiguous`.
+  factory _Builder.builtins() {
+    final builder = _Builder._(
+      <String, ClientDefinition>{},
+      <String, String>{},
+      <String, LaunchSpec?>{},
+    );
+    for (final MapEntry<String, Object?> entry in builtinClients.entries) {
+      builder._add(
+        entry.key,
+        entry.value,
+        'builtin.${entry.key}',
+        'builtin',
+        null,
+      );
+      builder.catalogLaunch[entry.key] = builder.clients[entry.key]!.launch;
+    }
+    return builder;
+  }
+
+  final Map<String, ClientDefinition> clients;
+  final Map<String, String> aliases;
+
+  /// Built-in launch definitions, which later layers may not weaken.
+  final Map<String, LaunchSpec?> catalogLaunch;
+
+  _Builder copy() => _Builder._(
+    Map<String, ClientDefinition>.of(clients),
+    Map<String, String>.of(aliases),
+    catalogLaunch,
+  );
+
+  /// Labels present here but not in [earlier], with the client they identify.
+  Map<String, String> labelsAddedTo(_Builder earlier) => <String, String>{
+    for (final MapEntry<String, String> entry in aliases.entries)
+      if (earlier.aliases[entry.key] != entry.value) entry.key: entry.value,
+  };
+
+  /// Merges one configured client over the current definitions.
+  void merge(
+    String id,
+    Object? raw,
+    String path,
+    String origin, {
+    String? file,
+  }) {
+    final ClientDefinition? base = clients[id];
+    if (base != null && base.ambiguous) {
+      _fail(
+        path,
+        'this label covers several surfaces and cannot be configured; '
+        'configure a specific client instead.',
+      );
+    }
+    if (base == null && aliases.containsKey(id)) {
+      _fail(path, 'the ID is already a source label of another client.');
+    }
+    _add(id, raw, path, origin, file);
+  }
+
+  /// Validates the whole entry before changing anything.
+  void _add(String id, Object? raw, String path, String origin, String? file) {
+    final bool catalog = origin == 'builtin';
+    final ClientDefinition? base = clients[id];
     final Map<String, Object?> json = _object(raw, path);
     _keys(json, {
       'name',
@@ -290,6 +484,21 @@ final class _Builder {
         _fail('$path.aliases', '"$alias" already identifies "$owner".');
       }
     }
+    final LaunchSpec? launch = json.containsKey('launch')
+        ? _launch(
+            json['launch'],
+            '$path.launch',
+            inherit: base != null && base.builtin ? base.launch : null,
+            pinned: catalogLaunch[id],
+          )
+        : base?.launch;
+    final LaunchPreferences? preferences = json.containsKey('preferences')
+        ? LaunchPreferences.fromJson(
+            json['preferences'],
+            path: '$path.preferences',
+            code: 'invalid_configuration',
+          )
+        : base?.preferences;
     for (final String alias in added) {
       aliases[alias] = id;
     }
@@ -299,29 +508,30 @@ final class _Builder {
       aliases: List<String>.unmodifiable(<String>{...?base?.aliases, ...added}),
       enabled: enabled as bool? ?? base?.enabled ?? true,
       builtin: base?.builtin ?? catalog,
+      origin: base?.origin ?? origin,
+      extensionFile: file ?? base?.extensionFile,
       ambiguous: json['ambiguous'] == true,
-      launch: json.containsKey('launch')
-          ? _launch(json['launch'], '$path.launch', base?.launch)
-          : base?.launch,
-      preferences: json.containsKey('preferences')
-          ? LaunchPreferences.fromJson(
-              json['preferences'],
-              path: '$path.preferences',
-              code: 'invalid_configuration',
-            )
-          : base?.preferences,
+      launch: launch,
+      preferences: preferences,
     );
   }
 }
 
-LaunchSpec _launch(Object? raw, String path, LaunchSpec? base) {
+/// [inherit] supplies unset ID rules; [pinned] is the built-in definition,
+/// whose kind and ID source stay fixed and whose ID format may only tighten.
+LaunchSpec _launch(
+  Object? raw,
+  String path, {
+  LaunchSpec? inherit,
+  LaunchSpec? pinned,
+}) {
   final Map<String, Object?> json = _object(raw, path);
   _keys(json, const {'command', 'uri', 'idFormat', 'idSource'}, path);
   if (json.containsKey('command') == json.containsKey('uri')) {
     _fail(path, 'specify exactly one of "command" or "uri".');
   }
   final String kind = json.containsKey('command') ? 'cli' : 'uri';
-  IdFormat format = base?.idFormat ?? IdFormat.safe;
+  IdFormat format = inherit?.idFormat ?? IdFormat.safe;
   if (json.containsKey('idFormat')) {
     final Object? value = json['idFormat'];
     format =
@@ -331,7 +541,7 @@ LaunchSpec _launch(Object? raw, String path, LaunchSpec? base) {
           'must be one of ${IdFormat.values.map((f) => f.value).join(', ')}.',
         );
   }
-  String source = base?.idSource ?? 'conversationId';
+  String source = inherit?.idSource ?? 'conversationId';
   if (json.containsKey('idSource')) {
     if (kind == 'cli') {
       _fail('$path.idSource', 'applies only to "uri" launches.');
@@ -342,17 +552,17 @@ LaunchSpec _launch(Object? raw, String path, LaunchSpec? base) {
     }
     source = value! as String;
   }
-  if (base != null) {
-    if (base.kind != kind) {
-      _fail(path, 'a built-in ${base.kind} client must keep the same kind.');
+  if (pinned != null) {
+    if (pinned.kind != kind) {
+      _fail(path, 'a built-in ${pinned.kind} client must keep the same kind.');
     }
-    if (base.idSource != source) {
-      _fail('$path.idSource', 'must stay ${base.idSource} for this client.');
+    if (pinned.idSource != source) {
+      _fail('$path.idSource', 'must stay ${pinned.idSource} for this client.');
     }
-    if (base.idFormat != format && base.idFormat != IdFormat.safe) {
+    if (pinned.idFormat != format && pinned.idFormat != IdFormat.safe) {
       _fail(
         '$path.idFormat',
-        'must stay ${base.idFormat.value} for this client.',
+        'must stay ${pinned.idFormat.value} for this client.',
       );
     }
   }
@@ -367,10 +577,11 @@ LaunchSpec _launch(Object? raw, String path, LaunchSpec? base) {
     final List<String> command = <String>[
       for (final Object? token in list) _text(token, '$path.command'),
     ];
-    if (!_executable.hasMatch(command.first)) {
+    if (!_isExecutable(command.first)) {
       _fail(
         '$path.command',
-        'the executable must be a program name, not a path or shell text.',
+        'the executable must be a program name or an absolute or ~/ path, '
+            'not shell text.',
       );
     }
     final List<String> arguments = command.sublist(1);
@@ -443,6 +654,8 @@ final RegExp _safeId = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._:-]*$');
 final RegExp _claudeDesktopId = RegExp(r'^local_[A-Za-z0-9-]{1,64}$');
 final RegExp _clientId = RegExp(r'^[a-z][a-z0-9-]{0,63}$');
 final RegExp _executable = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$');
+final RegExp _pathRoot = RegExp(r'^(?:~[\\/]|/|[A-Za-z]:[\\/])');
+final RegExp _pathSegment = RegExp(r'^[A-Za-z0-9._+@ ()-]{1,255}$');
 final RegExp _argToken = RegExp(r'^[A-Za-z0-9._:/+=,-]{1,256}$');
 final RegExp _uriToken = RegExp(r'^[A-Za-z0-9._~-]{1,256}$');
 final RegExp _uriTemplate = RegExp(
@@ -456,6 +669,26 @@ const Set<String> _blockedSchemes = <String>{
   'javascript',
   'mailto',
 };
+
+/// A program name on PATH, or an absolute or home-relative path whose
+/// segments are plain names.
+bool _isExecutable(String value) {
+  if (_executable.hasMatch(value)) return true;
+  final RegExpMatch? root = _pathRoot.firstMatch(value);
+  if (root == null || value.length > 1024) return false;
+  return value
+      .substring(root.end)
+      .split(RegExp(r'[\\/]'))
+      .every((s) => _pathSegment.hasMatch(s) && s != '.' && s != '..');
+}
+
+Object? _decode(String text, String path, String reason) {
+  try {
+    return jsonDecode(text);
+  } on FormatException {
+    _fail(path, reason);
+  }
+}
 
 Map<String, Object?> _object(Object? value, String path) {
   if (value is! Map<String, Object?>) _fail(path, 'must be an object.');

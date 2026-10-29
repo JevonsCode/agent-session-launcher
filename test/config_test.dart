@@ -197,6 +197,7 @@ void main() {
       'name': 'Codex Desktop',
       'enabled': true,
       'builtin': true,
+      'origin': 'builtin',
       'kind': 'uri',
       'idSource': 'conversationId',
       'idFormat': 'uuid',
@@ -340,12 +341,21 @@ void main() {
   test('malformed definitions cannot introduce commands or arbitrary URLs', () {
     for (final (Map<String, Object?> launch, String hint)
         in <(Map<String, Object?>, String)>[
-          (
-            <String, Object?>{
-              'command': <String>['/bin/sh', '--resume', '{id}'],
-            },
-            'program name',
-          ),
+          for (final String executable in <String>[
+            'bin/sh',
+            './sh',
+            '/opt/../sh',
+            '~user/sh',
+            '/bin/sh;rm',
+            r'C:\tools\..\sh.exe',
+            '-c',
+          ])
+            (
+              <String, Object?>{
+                'command': <String>[executable, '--resume', '{id}'],
+              },
+              'program name or an absolute or ~/ path',
+            ),
           (
             <String, Object?>{
               'command': <String>['example', '{id}', '{id}'],

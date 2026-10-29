@@ -10,13 +10,23 @@ final class SessionLauncher {
     LauncherConfig? config,
     String? operatingSystem,
     ProcessRunner? processRunner,
+    String? homeDirectory,
   }) : config = config ?? LauncherConfig.defaults,
        _operatingSystem = operatingSystem ?? Platform.operatingSystem,
-       _processRunner = processRunner ?? runProcess;
+       _processRunner = processRunner ?? runProcess,
+       _homeDirectory =
+           homeDirectory ??
+           Platform.environment[(operatingSystem ?? Platform.operatingSystem) ==
+                   'windows'
+               ? 'USERPROFILE'
+               : 'HOME'];
 
   final LauncherConfig config;
   final String _operatingSystem;
   final ProcessRunner _processRunner;
+
+  /// Expands a `~/` executable configured by the user.
+  final String? _homeDirectory;
 
   String classify(String source, {String? claudeEntrypoint}) =>
       config.classify(source, claudeEntrypoint: claudeEntrypoint);
@@ -30,6 +40,8 @@ final class SessionLauncher {
           name: client.name,
           enabled: client.enabled,
           builtin: client.builtin,
+          origin: client.origin,
+          extensionFile: client.extensionFile,
           kind: client.launch?.kind,
           idSource: client.launch?.idSource,
           idFormat: client.launch?.idFormat.value,
@@ -65,11 +77,34 @@ final class SessionLauncher {
           ? target.hostSessionId
           : target.conversationId,
     );
-    return launch.plan(
+    final LaunchPlan plan = launch.plan(
       id,
       workspacePath: launch.kind == 'cli'
           ? _validWorkspace(target.workspacePath, _operatingSystem)
           : null,
+    );
+    final String? executable = plan.executable;
+    if (executable == null || !RegExp(r'^~[\\/]').hasMatch(executable)) {
+      return plan;
+    }
+    final String home = (_homeDirectory ?? '').replaceAll(
+      RegExp(r'[\\/]+$'),
+      '',
+    );
+    if (home.isEmpty) {
+      throw const SessionLaunchException(
+        'unsupported_platform',
+        'The home directory for this executable is unknown.',
+      );
+    }
+    final String rest = executable.substring(1);
+    return LaunchPlan(
+      kind: plan.kind,
+      executable:
+          home +
+          (_operatingSystem == 'windows' ? rest.replaceAll('/', r'\') : rest),
+      arguments: plan.arguments,
+      workspacePath: plan.workspacePath,
     );
   }
 
