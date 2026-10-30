@@ -31,3 +31,7 @@
   asynchronously with an `Error` carrying `code`; `timeoutMs` (default 8000,
   at most 60000) and `unknown_outcome` (never retried automatically) are
   documented in the README and `index.d.ts`.
+- `docs/extension.schema.json`: an `install.afterInstall` step may be
+  `{ "code", "message" }` with a stable code (`restart_client`,
+  `new_session`, `reload_config`, `trust_hooks`, `other`) besides plain
+  text, matching agent-installer 0.2. The launcher still ignores `install`.
