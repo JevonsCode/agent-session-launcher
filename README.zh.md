@@ -130,10 +130,18 @@ await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' });
 ```
 
 用户本机的私有 Agent（内部 CLI、包装脚本、私有桌面应用）不需要宿主改设置：在
-`~/.config/agent-session-launcher/clients/`（Windows 为
-`%APPDATA%\agent-session-launcher\clients\`）放一个 `<客户端 ID>.json`，所有接入的
+`~/.config/agent-clients/extensions/`（设置了 `XDG_CONFIG_HOME` 时为
+`$XDG_CONFIG_HOME/agent-clients/extensions/`，Windows 为
+`%APPDATA%\agent-clients\extensions\`）放一个 `<客户端 ID>.json`，所有接入的
 宿主都会识别。一个文件出错只跳过该文件，可以用 `agent-session-launcher check
 <文件>` 自查，见 [本机扩展](docs/extensions.md)。
+
+> **0.4.0 起目录变更。** 原目录是同一基础目录下的 `agent-session-launcher/clients`，
+> 现改为与 [agent-installer](https://github.com/JevonsCode/agent-installer) 共用的
+> 中立根目录 `agent-clients`（安装器的备份在其中的 `backups/<产品>`）。只要
+> `agent-clients/extensions` 还不存在，`defaultExtensionsDirectory()` 仍返回旧目录，
+> 已有文件照常生效；组件不会替你移动文件。迁移方法：创建 `agent-clients/extensions`，
+> 把 `.json` 文件移进去——新目录存在后，旧目录不再读取。
 
 ```json
 {

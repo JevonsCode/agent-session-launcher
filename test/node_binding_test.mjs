@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, writeFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLauncher, defaultExtensionsDirectory, requestLauncher } from '../bindings/node/index.mjs';
@@ -134,10 +134,30 @@ test('createLauncher reads hand-written extension files and reports bad ones', a
   }
 });
 
-test('defaultExtensionsDirectory follows each platform convention', () => {
-  assert.equal(defaultExtensionsDirectory({ HOME: '/Users/a' }, 'darwin'), '/Users/a/.config/agent-session-launcher/clients');
-  assert.equal(defaultExtensionsDirectory({ HOME: '/home/a', XDG_CONFIG_HOME: '/x' }, 'linux'), '/x/agent-session-launcher/clients');
+test('defaultExtensionsDirectory is the shared agent-clients convention', () => {
+  assert.equal(defaultExtensionsDirectory({ HOME: '/Users/a' }, 'darwin'), '/Users/a/.config/agent-clients/extensions');
+  assert.equal(defaultExtensionsDirectory({ HOME: '/home/a', XDG_CONFIG_HOME: '/x' }, 'linux'), '/x/agent-clients/extensions');
+  assert.equal(defaultExtensionsDirectory({ HOME: '/home/a', XDG_CONFIG_HOME: 'x' }, 'linux'), '/home/a/.config/agent-clients/extensions');
   assert.equal(defaultExtensionsDirectory({ APPDATA: 'C:\\Users\\a\\AppData\\Roaming' }, 'win32'),
-    'C:\\Users\\a\\AppData\\Roaming\\agent-session-launcher\\clients');
+    'C:\\Users\\a\\AppData\\Roaming\\agent-clients\\extensions');
   assert.equal(defaultExtensionsDirectory({}, 'linux'), undefined);
+  assert.equal(defaultExtensionsDirectory({ HOME: '/home/a' }, 'win32'), undefined);
+});
+
+test('defaultExtensionsDirectory reads a 0.3 directory until the shared one exists', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-launch-default-'));
+  try {
+    const env = process.platform === 'win32'
+      ? { APPDATA: root }
+      : { HOME: '/nonexistent', XDG_CONFIG_HOME: root };
+    const current = join(root, 'agent-clients', 'extensions');
+    const legacy = join(root, 'agent-session-launcher', 'clients');
+    assert.equal(defaultExtensionsDirectory(env, process.platform), current);
+    await mkdir(legacy, { recursive: true });
+    assert.equal(defaultExtensionsDirectory(env, process.platform), legacy);
+    await mkdir(current, { recursive: true });
+    assert.equal(defaultExtensionsDirectory(env, process.platform), current);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

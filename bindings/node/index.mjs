@@ -1,19 +1,32 @@
 import { spawn } from 'node:child_process';
+import { statSync } from 'node:fs';
 import { isAbsolute, posix, win32 } from 'node:path';
 
 const MAX_BYTES = 65536;
 
 /**
  * The per-user directory of hand-written client files shared by every host,
- * or undefined when the environment does not name a home directory.
+ * or undefined when the environment does not name a home directory:
+ * `agent-clients/extensions` under `%APPDATA%` on Windows, and under
+ * `$XDG_CONFIG_HOME` (when absolute) or `~/.config` elsewhere. While it does
+ * not exist, a directory left at the 0.3 location
+ * (`agent-session-launcher/clients`) is returned instead; files are never
+ * moved. Shared with agent-installer, whose binding resolves the same path.
  */
 export function defaultExtensionsDirectory(env = process.env, platform = process.platform) {
-  if (platform === 'win32') {
-    return env.APPDATA ? win32.join(env.APPDATA, 'agent-session-launcher', 'clients') : undefined;
-  }
+  const path = platform === 'win32' ? win32 : posix;
   const xdg = env.XDG_CONFIG_HOME;
-  const base = xdg && xdg.startsWith('/') ? xdg : env.HOME ? posix.join(env.HOME, '.config') : undefined;
-  return base === undefined ? undefined : posix.join(base, 'agent-session-launcher', 'clients');
+  const base = platform === 'win32'
+    ? env.APPDATA || undefined
+    : xdg && xdg.startsWith('/') ? xdg : env.HOME ? posix.join(env.HOME, '.config') : undefined;
+  if (base === undefined) return undefined;
+  const current = path.join(base, 'agent-clients', 'extensions');
+  const legacy = path.join(base, 'agent-session-launcher', 'clients');
+  return !isDirectory(current) && isDirectory(legacy) ? legacy : current;
+}
+
+function isDirectory(path) {
+  try { return statSync(path).isDirectory(); } catch { return false; }
 }
 
 /**

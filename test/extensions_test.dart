@@ -281,20 +281,24 @@ void main() {
       expect(readExtensionDirectory('${temp.path}/missing'), isEmpty);
     });
 
-    test('refuses files and directories other users can write', () async {
-      final File file = File('${temp.path}/open.json')
-        ..writeAsStringSync('{"schemaVersion":1}');
-      await Process.run('chmod', <String>['666', file.path]);
-      expect(
-        readExtensionDirectory(temp.path).single.error,
-        'The file is writable by other users.',
-      );
-      await Process.run('chmod', <String>['777', temp.path]);
-      expect(
-        readExtensionDirectory(temp.path).single.error,
-        'The extensions directory is writable by other users.',
-      );
-    }, skip: Platform.isWindows ? 'POSIX permissions only.' : false);
+    test(
+      'refuses files and directories other users can write',
+      () async {
+        final File file = File('${temp.path}/open.json')
+          ..writeAsStringSync('{"schemaVersion":1}');
+        await Process.run('chmod', <String>['666', file.path]);
+        expect(
+          readExtensionDirectory(temp.path).single.error,
+          'The file is writable by other users.',
+        );
+        await Process.run('chmod', <String>['777', temp.path]);
+        expect(
+          readExtensionDirectory(temp.path).single.error,
+          'The extensions directory is writable by other users.',
+        );
+      },
+      skip: Platform.isWindows ? 'POSIX permissions only.' : false,
+    );
 
     test('the shipped examples load cleanly', () {
       final LauncherConfig config = LauncherConfig.load(
@@ -306,13 +310,13 @@ void main() {
     });
   });
 
-  test('the default directory follows each platform convention', () {
+  test('the default directory is the shared agent-clients convention', () {
     expect(
       defaultExtensionsDirectory(
         environment: <String, String>{'HOME': '/Users/me'},
         operatingSystem: 'macos',
       ),
-      '/Users/me/.config/agent-session-launcher/clients',
+      '/Users/me/.config/agent-clients/extensions',
     );
     expect(
       defaultExtensionsDirectory(
@@ -322,7 +326,7 @@ void main() {
         },
         operatingSystem: 'linux',
       ),
-      '/cfg/agent-session-launcher/clients',
+      '/cfg/agent-clients/extensions',
     );
     expect(
       defaultExtensionsDirectory(
@@ -332,7 +336,7 @@ void main() {
         },
         operatingSystem: 'linux',
       ),
-      '/home/me/.config/agent-session-launcher/clients',
+      '/home/me/.config/agent-clients/extensions',
     );
     expect(
       defaultExtensionsDirectory(
@@ -341,7 +345,7 @@ void main() {
         },
         operatingSystem: 'windows',
       ),
-      r'C:\Users\me\AppData\Roaming\agent-session-launcher\clients',
+      r'C:\Users\me\AppData\Roaming\agent-clients\extensions',
     );
     expect(
       defaultExtensionsDirectory(
@@ -350,6 +354,35 @@ void main() {
       ),
       isNull,
     );
+  });
+
+  test('a 0.3 directory is read until the shared one exists', () {
+    final Directory root = Directory.systemTemp.createTempSync(
+      'agent-launch-default-',
+    );
+    addTearDown(() => root.deleteSync(recursive: true));
+    final bool windows = Platform.isWindows;
+    final String sep = Platform.pathSeparator;
+    final Map<String, String> env = windows
+        ? <String, String>{'APPDATA': root.path}
+        : <String, String>{
+            'HOME': '/nonexistent',
+            'XDG_CONFIG_HOME': root.path,
+          };
+    String? resolve() => defaultExtensionsDirectory(
+      environment: env,
+      operatingSystem: windows ? 'windows' : 'linux',
+    );
+    final String current = '${root.path}${sep}agent-clients${sep}extensions';
+    final String legacy =
+        '${root.path}${sep}agent-session-launcher${sep}clients';
+
+    expect(resolve(), current);
+    Directory(legacy).createSync(recursive: true);
+    expect(resolve(), legacy);
+    Directory(current).createSync(recursive: true);
+    expect(resolve(), current);
+    expect(Directory(legacy).existsSync(), isTrue, reason: 'never moved');
   });
 
   test('protocol clients reports origin and skipped files', () async {

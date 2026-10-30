@@ -1,6 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
+// Shared with agent-installer: both read the same per-user directory, one
+// `<client-id>.json` per client, with the same limits, and the installer keeps
+// its backups under `backups/<product>` in the same root. Keep the root, the
+// layout and the limits in step with that repository; the tests of both
+// repositories guard this convention.
+
 /// At most this many `.json` files are loaded from one directory.
 const int maxExtensionFiles = 64;
 
@@ -9,24 +15,40 @@ const int maxExtensionBytes = 16384;
 
 /// The per-user directory that every host shares for hand-written client
 /// files, or null when the environment does not name a home directory.
+///
+/// It is `agent-clients/extensions` under `%APPDATA%` on Windows, and under
+/// `$XDG_CONFIG_HOME` (when absolute) or `~/.config` elsewhere. While that
+/// directory does not exist, a directory left at the 0.3 location
+/// (`agent-session-launcher/clients`) is returned instead, so existing files
+/// keep working. Files are never moved automatically.
 String? defaultExtensionsDirectory({
   Map<String, String>? environment,
   String? operatingSystem,
 }) {
   final Map<String, String> env = environment ?? Platform.environment;
-  if ((operatingSystem ?? Platform.operatingSystem) == 'windows') {
+  final bool windows =
+      (operatingSystem ?? Platform.operatingSystem) == 'windows';
+  final String? base;
+  if (windows) {
     final String? appData = env['APPDATA'];
-    if (appData == null || appData.isEmpty) return null;
-    return '$appData\\agent-session-launcher\\clients';
+    base = appData == null || appData.isEmpty ? null : appData;
+  } else {
+    final String? xdg = env['XDG_CONFIG_HOME'];
+    final String? home = env['HOME'];
+    base = xdg != null && xdg.startsWith('/')
+        ? xdg
+        : home == null || home.isEmpty
+        ? null
+        : '$home/.config';
   }
-  final String? xdg = env['XDG_CONFIG_HOME'];
-  final String? home = env['HOME'];
-  final String? base = xdg != null && xdg.startsWith('/')
-      ? xdg
-      : home == null || home.isEmpty
-      ? null
-      : '$home/.config';
-  return base == null ? null : '$base/agent-session-launcher/clients';
+  if (base == null) return null;
+  String under(String first, String second) =>
+      windows ? '$base\\$first\\$second' : '$base/$first/$second';
+  final String current = under('agent-clients', 'extensions');
+  final String legacy = under('agent-session-launcher', 'clients');
+  return !Directory(current).existsSync() && Directory(legacy).existsSync()
+      ? legacy
+      : current;
 }
 
 /// One user-written client file. Exactly one of [text] and [error] is set.

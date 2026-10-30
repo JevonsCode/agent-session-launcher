@@ -36,7 +36,7 @@ The Node binding can additionally throw `invalid_executable`, `invalid_timeout`,
 after an OS launch was requested; do not automatically repeat it.
 
 The native process optionally accepts `--config /absolute/path/to/config.json`
-and `--extensions /absolute/path/to/clients` from its trusted host and rereads
+and `--extensions /absolute/path/to/extensions` from its trusted host and rereads
 both on every call. Paths and client definitions are not request fields. An
 invalid host configuration fails every request with `invalid_configuration`
 and a message naming the JSON location; an invalid extension file only skips

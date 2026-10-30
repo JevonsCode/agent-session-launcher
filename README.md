@@ -149,11 +149,22 @@ client.
 
 A user's local private Agent (an internal CLI, a wrapper script, a private
 desktop app) needs no host configuration change: drop a `<client-id>.json`
-file into `~/.config/agent-session-launcher/clients/`
-(`%APPDATA%\agent-session-launcher\clients\` on Windows), and every
-integrated host will recognize it. An error in one file only skips that
-file; check it yourself with `agent-session-launcher check <file>` — see
+file into `~/.config/agent-clients/extensions/`
+(`$XDG_CONFIG_HOME/agent-clients/extensions/` when that is set,
+`%APPDATA%\agent-clients\extensions\` on Windows), and every integrated host
+will recognize it. An error in one file only skips that file; check it
+yourself with `agent-session-launcher check <file>` — see
 [local extensions](docs/extensions.md).
+
+> **Moved in 0.4.0.** The directory used to be
+> `agent-session-launcher/clients` under the same base. It moved to the
+> neutral `agent-clients` root that
+> [agent-installer](https://github.com/JevonsCode/agent-installer) also uses
+> (for `backups/<product>`). While `agent-clients/extensions` does not exist,
+> `defaultExtensionsDirectory()` still returns the old directory, so nothing
+> breaks; files are never moved for you. To move, create
+> `agent-clients/extensions` and move your `.json` files into it — once it
+> exists, the old directory is no longer read.
 
 ```json
 {

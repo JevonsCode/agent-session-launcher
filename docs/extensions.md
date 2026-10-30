@@ -1,15 +1,22 @@
 # 本机扩展
 
 本机上的 Agent 如果不在内置列表里，比如公司内部 CLI、自己写的包装脚本或私有
-桌面应用，可以写一个 JSON 文件让它被识别和打开。只要宿主（DingDong、FULI 等）
-接入时读取了这个目录，所有宿主都会生效，不需要分别配置。
+桌面应用，可以写一个 JSON 文件让它被识别和打开。只要宿主接入时读取了这个目录，
+所有宿主都会生效，不需要分别配置。
 
 ## 放在哪里
 
 | 平台 | 目录 |
 | --- | --- |
-| macOS / Linux | `~/.config/agent-session-launcher/clients/`；设置了 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/agent-session-launcher/clients/` |
-| Windows | `%APPDATA%\agent-session-launcher\clients\` |
+| macOS / Linux | `~/.config/agent-clients/extensions/`；设置了 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/agent-clients/extensions/` |
+| Windows | `%APPDATA%\agent-clients\extensions\` |
+
+`agent-clients` 是本组件与 [agent-installer](https://github.com/JevonsCode/agent-installer)
+共用的根目录：`extensions/` 放扩展文件，`backups/<产品>/` 放安装器的备份。
+
+0.4.0 之前目录是同一基础目录下的 `agent-session-launcher/clients/`。新目录不存在时，
+`defaultExtensionsDirectory()` 仍返回旧目录；新目录一旦存在，只读取新目录。组件
+不会移动你的文件，迁移时自己创建 `agent-clients/extensions/` 并把文件移过去即可。
 
 一个客户端一个文件，**文件名就是客户端 ID**：`acme-agent.json` 定义 `acme-agent`。
 ID 由小写字母、数字和连字符组成，最长 64 个字符。只读取该目录下的 `.json`
@@ -72,7 +79,7 @@ ID 由小写字母、数字和连字符组成，最长 64 个字符。只读取�
 写完后可以在终端里检查：
 
 ```sh
-agent-session-launcher check ~/.config/agent-session-launcher/clients/acme-agent.json
+agent-session-launcher check ~/.config/agent-clients/extensions/acme-agent.json
 ```
 
 通过时输出该客户端的设置页信息，否则输出原因，例如：
