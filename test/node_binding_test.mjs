@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, writeFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLauncher, defaultExtensionsDirectory, requestLauncher } from '../bindings/node/index.mjs';
@@ -79,6 +79,24 @@ test('Node host times out without retrying an uncertain open', async () => {
   }
 });
 
+test('every binding failure rejects asynchronously with a code', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'agent-launch-errors-'));
+  try {
+    let launcher;
+    assert.doesNotThrow(() => { launcher = createLauncher({ executable: 'relative' }); });
+    await assert.rejects(() => launcher.classify('Pi'), error => error instanceof Error && error.code === 'invalid_executable');
+    await assert.rejects(() => createLauncher({ executable: binary, timeoutMs: 60001 }).classify('Pi'),
+      error => error.code === 'invalid_timeout' && /60000 ms/.test(error.message));
+    await assert.rejects(() => createLauncher({ executable: join(directory, 'missing-launcher') }).classify('Pi'),
+      error => error.code === 'unavailable');
+    // Node reads the request as a script, fails and prints no JSON.
+    await assert.rejects(() => createLauncher({ executable: process.execPath }).classify('Pi'),
+      error => error.code === 'invalid_response');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('createLauncher binds the executable and config for every call', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'agent-launch-facade-'));
   try {
@@ -134,10 +152,30 @@ test('createLauncher reads hand-written extension files and reports bad ones', a
   }
 });
 
-test('defaultExtensionsDirectory follows each platform convention', () => {
-  assert.equal(defaultExtensionsDirectory({ HOME: '/Users/a' }, 'darwin'), '/Users/a/.config/agent-session-launcher/clients');
-  assert.equal(defaultExtensionsDirectory({ HOME: '/home/a', XDG_CONFIG_HOME: '/x' }, 'linux'), '/x/agent-session-launcher/clients');
+test('defaultExtensionsDirectory is the shared agent-clients convention', () => {
+  assert.equal(defaultExtensionsDirectory({ HOME: '/Users/a' }, 'darwin'), '/Users/a/.config/agent-clients/extensions');
+  assert.equal(defaultExtensionsDirectory({ HOME: '/home/a', XDG_CONFIG_HOME: '/x' }, 'linux'), '/x/agent-clients/extensions');
+  assert.equal(defaultExtensionsDirectory({ HOME: '/home/a', XDG_CONFIG_HOME: 'x' }, 'linux'), '/home/a/.config/agent-clients/extensions');
   assert.equal(defaultExtensionsDirectory({ APPDATA: 'C:\\Users\\a\\AppData\\Roaming' }, 'win32'),
-    'C:\\Users\\a\\AppData\\Roaming\\agent-session-launcher\\clients');
+    'C:\\Users\\a\\AppData\\Roaming\\agent-clients\\extensions');
   assert.equal(defaultExtensionsDirectory({}, 'linux'), undefined);
+  assert.equal(defaultExtensionsDirectory({ HOME: '/home/a' }, 'win32'), undefined);
+});
+
+test('defaultExtensionsDirectory reads a 0.3 directory until the shared one exists', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-launch-default-'));
+  try {
+    const env = process.platform === 'win32'
+      ? { APPDATA: root }
+      : { HOME: '/nonexistent', XDG_CONFIG_HOME: root };
+    const current = join(root, 'agent-clients', 'extensions');
+    const legacy = join(root, 'agent-session-launcher', 'clients');
+    assert.equal(defaultExtensionsDirectory(env, process.platform), current);
+    await mkdir(legacy, { recursive: true });
+    assert.equal(defaultExtensionsDirectory(env, process.platform), legacy);
+    await mkdir(current, { recursive: true });
+    assert.equal(defaultExtensionsDirectory(env, process.platform), current);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

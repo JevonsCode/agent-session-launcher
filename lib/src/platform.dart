@@ -52,6 +52,14 @@ Future<void> openPlan(
             preferences.itermOpenMode ?? ITermOpenMode.newWindow,
           ),
         ];
+      case 'windows' when plan.opener == WindowsOpener.powershell:
+        executable = 'powershell.exe';
+        arguments = <String>[
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          windowsStartProcessScript(plan),
+        ];
       case 'windows':
         executable = 'wt.exe';
         arguments = <String>[
@@ -69,7 +77,13 @@ Future<void> openPlan(
   }
   try {
     final ProcessResult result = await processRunner(executable, arguments);
-    if (result.exitCode != 0) {
+    // explorer.exe passes the URI to its registered handler and returns; it
+    // commonly exits with 1 even when the handler started, so its exit code
+    // says nothing about the outcome. A missing handler shows Windows' own
+    // "choose an app" prompt. Only a failure to start explorer.exe, or no
+    // answer in time, is reported for this opener.
+    final bool exitCodeMeaningful = executable != 'explorer.exe';
+    if (exitCodeMeaningful && result.exitCode != 0) {
       throw const SessionLaunchException(
         'launch_failed',
         'The operating system rejected the launch request.',
@@ -136,4 +150,45 @@ Future<ProcessResult> runProcess(
   );
   await Future.wait(<Future<void>>[stdoutDone, stderrDone]);
   return ProcessResult(process.pid, code, '', '');
+}
+
+/// The Windows PowerShell script that opens a CLI plan in a new console
+/// window when Windows Terminal is missing. Every value is a single-quoted
+/// literal, so nothing in it is expanded; `ProcessStartInfo` is used instead
+/// of `Start-Process` because the latter treats `[` and `]` in the working
+/// directory as wildcards. Arguments are already restricted to plain tokens.
+String windowsStartProcessScript(LaunchPlan plan) => <String>[
+  r"$ErrorActionPreference = 'Stop'",
+  r'$info = New-Object System.Diagnostics.ProcessStartInfo',
+  '\$info.FileName = ${_powershellQuote(plan.executable!)}',
+  '\$info.Arguments = ${_powershellQuote(plan.arguments.join(' '))}',
+  '\$info.WorkingDirectory = ${_powershellQuote(plan.workspacePath!)}',
+  r'$info.UseShellExecute = $true',
+  r'[void][System.Diagnostics.Process]::Start($info)',
+].join('; ');
+
+/// PowerShell treats the typographic single quotes like `'`, so all of them
+/// are doubled inside a single-quoted string.
+String _powershellQuote(String value) =>
+    "'${value.replaceAllMapped(_singleQuotes, (m) => '${m[0]}${m[0]}')}'";
+
+final RegExp _singleQuotes = RegExp("['\\u2018\\u2019\\u201A\\u201B]");
+
+/// Whether [command] is a file in one of the PATH directories. App execution
+/// aliases such as `wt.exe` are reparse points, so links count as present.
+bool isOnPath(String command) {
+  final Map<String, String> env = Platform.environment;
+  final String path = env['PATH'] ?? env['Path'] ?? '';
+  final String separator = Platform.isWindows ? ';' : ':';
+  for (final String directory in path.split(separator)) {
+    if (directory.trim().isEmpty) continue;
+    final String candidate =
+        '${directory.replaceAll(RegExp(r'[\/]+$'), '')}'
+        '${Platform.pathSeparator}$command';
+    if (FileSystemEntity.typeSync(candidate, followLinks: false) !=
+        FileSystemEntityType.notFound) {
+      return true;
+    }
+  }
+  return false;
 }

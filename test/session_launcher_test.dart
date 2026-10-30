@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:agent_session_launcher/agent_session_launcher.dart';
+import 'package:agent_session_launcher/src/platform.dart'
+    show windowsStartProcessScript;
 import 'package:test/test.dart';
 
 Matcher failsWith(String code) =>
@@ -343,5 +345,196 @@ void main() {
     skip: Platform.isWindows
         ? 'A simulated macOS workspace needs a POSIX temporary path.'
         : false,
+  );
+
+  group('Windows openers', () {
+    ProcessRunner recorder(
+      List<(String, List<String>)> calls, {
+      int exitCode = 0,
+    }) => (command, args, {workingDirectory}) async {
+      calls.add((command, args));
+      return ProcessResult(1, exitCode, '', '');
+    };
+
+    test('an explorer.exe exit code alone is not a failed launch', () async {
+      final calls = <(String, List<String>)>[];
+      final launcher = SessionLauncher(
+        operatingSystem: 'windows',
+        processRunner: recorder(calls, exitCode: 1),
+      );
+      await launcher.open(
+        const SessionTarget(
+          client: 'codex-desktop',
+          conversationId: 'a45cce14-b0be-4aea-a8f9-e88195674770',
+        ),
+      );
+      expect(calls.single.$1, 'explorer.exe');
+      expect(calls.single.$2, <String>[
+        'codex://threads/a45cce14-b0be-4aea-a8f9-e88195674770',
+      ]);
+    });
+
+    test('explorer.exe that cannot start still fails the launch', () async {
+      final launcher = SessionLauncher(
+        operatingSystem: 'windows',
+        processRunner: (command, args, {workingDirectory}) async =>
+            throw ProcessException(command, args, 'not found', 2),
+      );
+      expect(
+        launcher.open(
+          const SessionTarget(
+            client: 'codex-desktop',
+            conversationId: 'a45cce14-b0be-4aea-a8f9-e88195674770',
+          ),
+        ),
+        failsWith('launch_failed'),
+      );
+    });
+
+    test('other openers still fail on a non-zero exit code', () async {
+      final calls = <(String, List<String>)>[];
+      final launcher = SessionLauncher(
+        operatingSystem: 'linux',
+        processRunner: recorder(calls, exitCode: 1),
+      );
+      await expectLater(
+        launcher.open(
+          const SessionTarget(
+            client: 'codex-desktop',
+            conversationId: 'a45cce14-b0be-4aea-a8f9-e88195674770',
+          ),
+        ),
+        failsWith('launch_failed'),
+      );
+      expect(calls.single.$1, 'xdg-open');
+    });
+
+    test('the plan names the Windows CLI opener', () {
+      const target = SessionTarget(
+        client: 'claude-code',
+        conversationId: 'session-123',
+        workspacePath: r'C:\work',
+      );
+      final withTerminal = SessionLauncher(
+        operatingSystem: 'windows',
+        commandAvailable: (command) => command == 'wt.exe',
+      ).inspect(target);
+      expect(withTerminal.toJson()['opener'], 'windows-terminal');
+      final without = SessionLauncher(
+        operatingSystem: 'windows',
+        commandAvailable: (command) => false,
+      ).inspect(target);
+      expect(without.toJson()['opener'], 'powershell');
+      expect(
+        SessionLauncher(
+          operatingSystem: 'macos',
+        ).inspect(target.withWorkspace('/work')).toJson(),
+        isNot(contains('opener')),
+      );
+      expect(
+        SessionLauncher(
+              operatingSystem: 'windows',
+              commandAvailable: (_) => false,
+            )
+            .inspect(
+              const SessionTarget(
+                client: 'codex-desktop',
+                conversationId: 'a45cce14-b0be-4aea-a8f9-e88195674770',
+              ),
+            )
+            .toJson(),
+        isNot(contains('opener')),
+      );
+    });
+
+    test('the PowerShell fallback quotes every value as a literal', () {
+      final String script = windowsStartProcessScript(
+        const LaunchPlan(
+          kind: 'cli',
+          executable: r'C:\Tools (x86)\agent.exe',
+          arguments: <String>['--resume', 'session-123'],
+          workspacePath:
+              "C:\work\it's [draft] \u2019quoted\u2019 \$HOME %PATH%",
+        ),
+      );
+      expect(script, startsWith(r"$ErrorActionPreference = 'Stop'; "));
+      expect(script, contains(r"$info.FileName = 'C:\Tools (x86)\agent.exe'"));
+      expect(script, contains(r"$info.Arguments = '--resume session-123'"));
+      expect(
+        script,
+        contains(
+          "\$info.WorkingDirectory = 'C:\work\it''s [draft] "
+          "\u2019\u2019quoted\u2019\u2019 \$HOME %PATH%'",
+        ),
+      );
+      expect(script, contains(r'$info.UseShellExecute = $true'));
+      expect(script, isNot(contains('Start-Process')));
+    });
+
+    test(
+      'without Windows Terminal a CLI opens through PowerShell',
+      () async {
+        final temp = await Directory.systemTemp.createTemp("agent-launch-'w ");
+        addTearDown(() => temp.delete(recursive: true));
+        final calls = <(String, List<String>)>[];
+        final launcher = SessionLauncher(
+          operatingSystem: 'windows',
+          processRunner: recorder(calls),
+          commandAvailable: (_) => false,
+        );
+        await launcher.open(
+          SessionTarget(
+            client: 'claude-code',
+            conversationId: 'session-123',
+            workspacePath: temp.path,
+          ),
+        );
+        expect(calls.single.$1, 'powershell.exe');
+        expect(calls.single.$2.take(3), <String>[
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+        ]);
+        expect(
+          calls.single.$2.last,
+          contains(
+            "\$info.WorkingDirectory = '${temp.path.replaceAll("'", "''")}'",
+          ),
+        );
+
+        calls.clear();
+        await SessionLauncher(
+          operatingSystem: 'windows',
+          processRunner: recorder(calls),
+          commandAvailable: (_) => true,
+        ).open(
+          SessionTarget(
+            client: 'claude-code',
+            conversationId: 'session-123',
+            workspacePath: temp.path,
+          ),
+        );
+        expect(calls.single.$1, 'wt.exe');
+        expect(calls.single.$2, <String>[
+          '-d',
+          temp.path,
+          'claude',
+          '--resume',
+          'session-123',
+        ]);
+      },
+      skip: Platform.isWindows
+          ? false
+          : 'A simulated Windows workspace needs a drive-letter path.',
+    );
+  });
+}
+
+extension on SessionTarget {
+  SessionTarget withWorkspace(String path) => SessionTarget(
+    client: client,
+    conversationId: conversationId,
+    hostSessionId: hostSessionId,
+    workspacePath: path,
   );
 }

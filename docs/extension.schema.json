@@ -250,10 +250,32 @@
           }
         },
         "afterInstall": {
+          "description": "Steps left to the person after agent-installer changes this client. Plain text has the code other; an object names a stable code a host can show in its own words.",
           "type": "array",
+          "maxItems": 32,
           "items": {
-            "type": "string",
-            "maxLength": 200
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["code", "message"],
+                "properties": {
+                  "code": {
+                    "enum": ["restart_client", "new_session", "reload_config", "trust_hooks", "other"]
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                }
+              }
+            ]
           }
         }
       }

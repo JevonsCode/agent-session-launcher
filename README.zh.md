@@ -27,9 +27,12 @@ protocol for Node.js and other hosts. Background Agent execution is out of scope
 entrypoint 时归为 `claude-desktop`，有明确的 `Claude Code CLI` 来源时归为 CLI。
 OpenCode 的某些事件也不区分 Desktop 和 CLI，宿主必须先取得可靠来源。
 
-macOS CLI 使用 Terminal 或 iTerm；Windows 使用 Windows Terminal。Linux 可以
-生成 CLI 计划，但目前没有实现交互式终端打开。URI 路径在 macOS、Windows、Linux
-分别请求系统打开；这些能力仍依赖客户端和对应系统组件实际安装。
+macOS CLI 使用 Terminal 或 iTerm；Windows 使用 Windows Terminal，没有安装时改用
+Windows PowerShell 打开一个新的控制台窗口（计划中的 `opener` 为 `windows-terminal`
+或 `powershell`）。Linux 可以生成 CLI 计划，但目前没有实现交互式终端打开。URI
+路径在 macOS、Windows、Linux 分别请求系统打开；这些能力仍依赖客户端和对应系统
+组件实际安装。Windows 上 URI 交给 `explorer.exe`，它即使成功也常以 1 退出，所以
+它的退出码不算失败，只有无法启动或超时才报错。
 
 Claude Desktop 深链来自本机行为验证，不是这里所能保证的公开稳定契约。组件不识别、
 保存或切换登录账号，打开时使用目标客户端当前的登录状态与配置。`inspect` 的
@@ -52,8 +55,8 @@ Node 宿主把下载的文件路径作为 `executable` 传给绑定即可。
 
 ## 构建与使用
 
-需要 Dart SDK 3.10 或更高版本。DingDong、FULI 等宿主的完整接入步骤与现有设置
-的字段对应见 [接入指南](docs/integration.md)。
+需要 Dart SDK 3.10 或更高版本。宿主的完整接入步骤，以及如何把宿主已有的“打开方式”
+设置对应到宿主配置，见 [Integrating a host](docs/integrating-a-host.md)（英文）。
 
 Flutter/Dart 应用通过 Git 依赖进程内调用（包尚未发布到 pub.dev）：
 
@@ -103,6 +106,13 @@ await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' });
 // 'claude-desktop'；失败时以带 code 的 Error 拒绝
 ```
 
+每次调用最多等待 `timeoutMs`（默认 8000 ms，最大 60000 ms）。所有失败都以 Promise
+拒绝（不会同步抛出），`Error.code` 是 [协议](docs/protocol.md) 的错误码或绑定自己的
+错误码：`invalid_executable`、`invalid_timeout`、`invalid_configuration`、
+`invalid_request`、`unavailable`（可执行文件无法启动）、`invalid_response`、
+`unknown_outcome`。`unknown_outcome` 表示超时后进程已被结束，会话可能已经打开，
+不要自动重试。agent-installer 的绑定使用同样的启动、超时和解析逻辑。
+
 可执行文件一次从 stdin 读取一个 JSON 对象，输出一个 JSON 对象后退出；动作
 `classify`、`clients`、`inspect`、`open` 及错误码见 [协议说明](docs/protocol.md)。
 构建物与宿主系统、CPU 架构匹配，不能把 macOS 构建物当作 Windows/Linux 二进制
@@ -130,10 +140,18 @@ await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' });
 ```
 
 用户本机的私有 Agent（内部 CLI、包装脚本、私有桌面应用）不需要宿主改设置：在
-`~/.config/agent-session-launcher/clients/`（Windows 为
-`%APPDATA%\agent-session-launcher\clients\`）放一个 `<客户端 ID>.json`，所有接入的
+`~/.config/agent-clients/extensions/`（设置了 `XDG_CONFIG_HOME` 时为
+`$XDG_CONFIG_HOME/agent-clients/extensions/`，Windows 为
+`%APPDATA%\agent-clients\extensions\`）放一个 `<客户端 ID>.json`，所有接入的
 宿主都会识别。一个文件出错只跳过该文件，可以用 `agent-session-launcher check
 <文件>` 自查，见 [本机扩展](docs/extensions.md)。
+
+> **0.4.0 起目录变更。** 原目录是同一基础目录下的 `agent-session-launcher/clients`，
+> 现改为与 [agent-installer](https://github.com/JevonsCode/agent-installer) 共用的
+> 中立根目录 `agent-clients`（安装器的备份在其中的 `backups/<产品>`）。只要
+> `agent-clients/extensions` 还不存在，`defaultExtensionsDirectory()` 仍返回旧目录，
+> 已有文件照常生效；组件不会替你移动文件。迁移方法：创建 `agent-clients/extensions`，
+> 把 `.json` 文件移进去——新目录存在后，旧目录不再读取。
 
 ```json
 {
@@ -166,9 +184,8 @@ JSON 路径，不会部分生效。字段、合并规则和不可放宽的约束
   组件的固定映射生成。Node 绑定的可执行文件路径是宿主自己的本地配置。
 - `launch_requested` 只表示系统接受了启动请求，不代表客户端完成登录或恢复成功。
   超时可能产生不确定结果，宿主不得自动重试一次可能已经打开的会话。
-- FULI 的后台 Agent 唤醒、授权、消息和结果处理是另一套能力；本组件不取代它。
-  FULI 的 OpenCode 生命周期插件也不等同于“打开原会话”，两个宿主需要各自完成
-  接线与验收。本仓库不会修改现有 DingDong 或 FULI 配置。
+- 在后台运行 Agent、给它发消息和处理结果不在本组件范围内；本组件只打开交互式
+  会话，也不会修改宿主自己的配置。
 
 ## 验证
 

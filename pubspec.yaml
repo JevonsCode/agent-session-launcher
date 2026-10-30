@@ -1,6 +1,6 @@
 name: agent_session_launcher
 description: Local, explicit and reusable Agent conversation launcher.
-version: 0.3.1
+version: 0.4.0
 repository: https://github.com/JevonsCode/agent-session-launcher
 publish_to: none
 environment:

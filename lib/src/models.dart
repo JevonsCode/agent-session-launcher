@@ -38,6 +38,7 @@ final class LaunchPlan {
     this.executable,
     this.arguments = const <String>[],
     this.workspacePath,
+    this.opener,
   });
   final String kind;
   final Uri? uri;
@@ -45,14 +46,42 @@ final class LaunchPlan {
   final List<String> arguments;
   final String? workspacePath;
 
+  /// How a CLI plan is opened on Windows: [WindowsOpener.windowsTerminal]
+  /// when `wt.exe` is on PATH, otherwise [WindowsOpener.powershell]. Null on
+  /// other platforms and for URI plans.
+  final String? opener;
+
+  LaunchPlan withOpener(String? value) => LaunchPlan(
+    kind: kind,
+    uri: uri,
+    executable: executable,
+    arguments: arguments,
+    workspacePath: workspacePath,
+    opener: value,
+  );
+
   Map<String, Object?> toJson() => <String, Object?>{
     'kind': kind,
     if (uri != null) 'uri': uri.toString(),
     if (executable != null) 'executable': executable,
     if (kind == 'cli') 'arguments': arguments,
     if (workspacePath != null) 'workspacePath': workspacePath,
+    if (opener != null) 'opener': opener,
   };
 }
+
+/// The values of [LaunchPlan.opener].
+abstract final class WindowsOpener {
+  /// Windows Terminal (`wt.exe -d <workspace> <program> <args>`).
+  static const String windowsTerminal = 'windows-terminal';
+
+  /// A new console window from Windows PowerShell's `Start-Process`, used
+  /// when Windows Terminal is not installed.
+  static const String powershell = 'powershell';
+}
+
+/// Whether a program named like `wt.exe` can be started by name.
+typedef CommandLookup = bool Function(String command);
 
 enum MacosTerminal {
   terminal('terminal'),

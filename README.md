@@ -30,9 +30,14 @@ there is an explicit Desktop entrypoint, and as CLI when there is an explicit
 from CLI; the host must obtain a reliable source first.
 
 On macOS, CLI sessions open in Terminal or iTerm; on Windows, in Windows
-Terminal. Linux can produce a CLI plan, but interactive terminal opening is
-not yet implemented there. The URI path asks the system to open it, with its
-own implementation on macOS, Windows, and Linux; these capabilities still
+Terminal, or in a new console window through Windows PowerShell when Windows
+Terminal is not installed (the plan's `opener` is `windows-terminal` or
+`powershell`). Linux can produce a CLI plan, but interactive terminal opening
+is not yet implemented there. The URI path asks the system to open it, with
+its own implementation on macOS, Windows, and Linux. On Windows the URI goes
+to `explorer.exe`, which commonly exits with 1 even when it succeeded, so its
+exit code is not treated as a failure; only failing to start it or a timeout
+is. These capabilities still
 depend on the client and the corresponding system component actually being
 installed.
 
@@ -62,9 +67,9 @@ the binding.
 
 ## Build and usage
 
-Requires Dart SDK 3.10 or later. Full integration steps for hosts such as
-DingDong and FULI, mapped to the fields of an existing setup, are in the
-[integration guide](docs/integration.md).
+Requires Dart SDK 3.10 or later. Full integration steps for a host, including
+how to map an existing "open with" setting onto the host configuration, are in
+[Integrating a host](docs/integrating-a-host.md).
 
 A Flutter/Dart application calls it in-process via a Git dependency (the
 package is not yet published to pub.dev):
@@ -116,6 +121,16 @@ await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' });
 // 'claude-desktop'; rejects with an Error carrying a code on failure
 ```
 
+Every call waits at most `timeoutMs` (default 8000 ms, at most 60000 ms).
+Every failure rejects — nothing throws synchronously — with an `Error` whose
+`code` is a [protocol](docs/protocol.md) error code or a binding code:
+`invalid_executable`, `invalid_timeout`, `invalid_configuration`,
+`invalid_request`, `unavailable` (the executable could not start),
+`invalid_response`, or `unknown_outcome`. `unknown_outcome` means no answer
+arrived in time and the process was killed; the session may already be open,
+so never retry automatically. The same spawn/timeout/parse helper is used by
+the agent-installer binding.
+
 The executable reads one JSON object from stdin and exits after printing one
 JSON object; the `classify`, `clients`, `inspect`, `open` actions and error
 codes are in the [protocol reference](docs/protocol.md). A build must match
@@ -149,11 +164,22 @@ client.
 
 A user's local private Agent (an internal CLI, a wrapper script, a private
 desktop app) needs no host configuration change: drop a `<client-id>.json`
-file into `~/.config/agent-session-launcher/clients/`
-(`%APPDATA%\agent-session-launcher\clients\` on Windows), and every
-integrated host will recognize it. An error in one file only skips that
-file; check it yourself with `agent-session-launcher check <file>` — see
+file into `~/.config/agent-clients/extensions/`
+(`$XDG_CONFIG_HOME/agent-clients/extensions/` when that is set,
+`%APPDATA%\agent-clients\extensions\` on Windows), and every integrated host
+will recognize it. An error in one file only skips that file; check it
+yourself with `agent-session-launcher check <file>` — see
 [local extensions](docs/extensions.md).
+
+> **Moved in 0.4.0.** The directory used to be
+> `agent-session-launcher/clients` under the same base. It moved to the
+> neutral `agent-clients` root that
+> [agent-installer](https://github.com/JevonsCode/agent-installer) also uses
+> (for `backups/<product>`). While `agent-clients/extensions` does not exist,
+> `defaultExtensionsDirectory()` still returns the old directory, so nothing
+> breaks; files are never moved for you. To move, create
+> `agent-clients/extensions` and move your `.json` files into it — once it
+> exists, the old directory is no longer read.
 
 ```json
 {
@@ -200,12 +226,9 @@ session for.
   does not mean the client finished logging in or resuming. A timeout can
   leave an uncertain result, and the host must not automatically retry a
   session that may already be open.
-- FULI's background Agent wake-up, authorization, messaging, and result
-  handling are a separate capability; this component does not replace them.
-  FULI's OpenCode lifecycle plugin is also not equivalent to "opening the
-  original session" — the two hosts each need to complete their own wiring
-  and verification. This repository does not modify any existing DingDong or
-  FULI configuration.
+- Running an Agent in the background, sending it messages and handling its
+  results are out of scope; this component only opens an interactive
+  session. It never changes a host's own configuration.
 
 ## Verification
 
