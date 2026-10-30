@@ -62,9 +62,9 @@ the binding.
 
 ## Build and usage
 
-Requires Dart SDK 3.10 or later. Full integration steps for hosts such as
-DingDong and FULI, mapped to the fields of an existing setup, are in the
-[integration guide](docs/integration.md).
+Requires Dart SDK 3.10 or later. Full integration steps for a host, including
+how to map an existing "open with" setting onto the host configuration, are in
+[Integrating a host](docs/integrating-a-host.md).
 
 A Flutter/Dart application calls it in-process via a Git dependency (the
 package is not yet published to pub.dev):
@@ -211,12 +211,9 @@ session for.
   does not mean the client finished logging in or resuming. A timeout can
   leave an uncertain result, and the host must not automatically retry a
   session that may already be open.
-- FULI's background Agent wake-up, authorization, messaging, and result
-  handling are a separate capability; this component does not replace them.
-  FULI's OpenCode lifecycle plugin is also not equivalent to "opening the
-  original session" — the two hosts each need to complete their own wiring
-  and verification. This repository does not modify any existing DingDong or
-  FULI configuration.
+- Running an Agent in the background, sending it messages and handling its
+  results are out of scope; this component only opens an interactive
+  session. It never changes a host's own configuration.
 
 ## Verification
 
