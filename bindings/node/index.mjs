@@ -29,12 +29,17 @@ function isDirectory(path) {
   try { return statSync(path).isDirectory(); } catch { return false; }
 }
 
+/** Default and largest accepted `timeoutMs`. */
+const DEFAULT_TIMEOUT_MS = 8000;
+const MAX_TIMEOUT_MS = 60000;
+
 /**
  * Bind the native executable, a trusted config file and the user's extension
  * directory once, then call `classify`, `clients`, `inspect` and `open`.
- * Failed responses reject with an Error whose `code` is the launcher error code.
+ * Every failure rejects with an Error whose `code` is the launcher or binding
+ * error code; nothing throws synchronously.
  */
-export function createLauncher({ executable, configPath, extensionsDir, timeoutMs = 8000 } = {}) {
+export function createLauncher({ executable, configPath, extensionsDir, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const options = { configPath, extensionsDir, timeoutMs };
   async function call(request) {
     const result = await requestLauncher(executable, { version: 1, ...request }, options);
@@ -53,21 +58,24 @@ export function createLauncher({ executable, configPath, extensionsDir, timeoutM
       const { plan, openSupported } = await call({ action: 'inspect', target });
       return { plan, openSupported };
     },
-    /** Only for an explicit user action. Do not retry on `unknown_outcome`. */
+    /** Only for an explicit user action. Never retry automatically on `unknown_outcome`. */
     open: async (target, preferences) => (await call({
       action: 'open', target, ...(preferences === undefined ? {} : { preferences }),
     })).status,
   };
 }
 
-/** Call the bundled native executable. The caller authorizes `open`; no shell is used. */
-export async function requestLauncher(executable, request, { timeoutMs = 8000, configPath, extensionsDir } = {}) {
+/**
+ * Call the bundled native executable with one request and resolve its response,
+ * including `ok: false` responses. The caller authorizes `open`; no shell is used.
+ */
+export async function requestLauncher(executable, request, {
+  timeoutMs = DEFAULT_TIMEOUT_MS, configPath, extensionsDir,
+} = {}) {
   if (typeof executable !== 'string' || !isAbsolute(executable)) {
     throw bindingError('invalid_executable', 'The launcher executable path must be absolute.');
   }
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60000) {
-    throw bindingError('invalid_timeout', 'The timeout must be between 1 and 60000 ms.');
-  }
+  checkTimeout(timeoutMs, MAX_TIMEOUT_MS);
   if (configPath !== undefined && (typeof configPath !== 'string' || !isAbsolute(configPath))) {
     throw bindingError('invalid_configuration', 'The trusted configuration path must be absolute.');
   }
@@ -79,16 +87,37 @@ export async function requestLauncher(executable, request, { timeoutMs = 8000, c
   if (typeof input !== 'string' || Buffer.byteLength(input) > MAX_BYTES) {
     throw bindingError('invalid_request', 'The request is too large or is not JSON.');
   }
+  const args = [
+    ...(configPath === undefined ? [] : ['--config', configPath]),
+    ...(extensionsDir === undefined ? [] : ['--extensions', extensionsDir]),
+  ];
+  const { exitCode, response } = await runNative(executable, args, { input, timeoutMs, maxBytes: MAX_BYTES });
+  // The launcher exits non-zero exactly when `ok` is false.
+  if (exitCode !== 0 && response.ok) {
+    throw bindingError('invalid_response', 'The executable returned an invalid response.');
+  }
+  return response;
+}
+
+/**
+ * Runs the native executable once and reads its single JSON response.
+ * The same helper is copied in agent-installer's binding; keep them in step.
+ * Resolves { exitCode, response }. Rejects with an Error carrying `code`:
+ *   unavailable       the executable could not start
+ *   unknown_outcome   no answer within timeoutMs; the process was killed and the
+ *                     action may or may not have happened, so never retry automatically
+ *   invalid_response  the output was not one bounded version-1 JSON object
+ */
+function runNative(executable, args, { input, timeoutMs, maxBytes }) {
   return new Promise((resolve, reject) => {
-    const args = [
-      ...(configPath === undefined ? [] : ['--config', configPath]),
-      ...(extensionsDir === undefined ? [] : ['--extensions', extensionsDir]),
-    ];
-    const child = spawn(executable, args, { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
+    const child = spawn(executable, args, {
+      shell: false, windowsHide: true, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'],
+    });
     const chunks = [];
     let bytes = 0;
     let done = false;
-    const timer = setTimeout(() => finish(bindingError('unknown_outcome', 'The launcher timed out; do not automatically retry an open.'), true), timeoutMs);
+    const timer = setTimeout(() => finish(bindingError('unknown_outcome',
+      `No answer within ${timeoutMs} ms; the outcome is unknown, so do not retry automatically.`), true), timeoutMs);
     function finish(error, kill = false, value) {
       if (done) return;
       done = true;
@@ -96,25 +125,33 @@ export async function requestLauncher(executable, request, { timeoutMs = 8000, c
       if (kill) child.kill();
       if (error) reject(error); else resolve(value);
     }
-    child.on('error', () => finish(bindingError('unavailable', 'The launcher executable could not start.')));
+    child.on('error', () => finish(bindingError('unavailable', 'The executable could not start.')));
     child.stdout.on('data', chunk => {
       bytes += chunk.length;
-      if (bytes > MAX_BYTES) finish(bindingError('invalid_response', 'The launcher response is too large.'), true);
+      if (bytes > maxBytes) finish(bindingError('invalid_response', 'The response is too large.'), true);
       else chunks.push(chunk);
     });
-    child.on('close', code => {
+    child.on('close', exitCode => {
       if (done) return;
-      let result;
-      try { result = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
-      catch { return finish(bindingError('invalid_response', 'The launcher did not return JSON.')); }
-      if (!result || result.version !== 1 || typeof result.ok !== 'boolean' || (code !== 0 && result.ok)) {
-        return finish(bindingError('invalid_response', 'The launcher returned an invalid response.'));
+      let response;
+      try { response = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+      catch { return finish(bindingError('invalid_response', 'The executable did not return JSON.')); }
+      if (!response || response.version !== 1 || typeof response.ok !== 'boolean') {
+        return finish(bindingError('invalid_response', 'The executable returned an invalid response.'));
       }
-      finish(null, false, result);
+      finish(null, false, { exitCode, response });
     });
-    child.stdin.on('error', () => {});
-    child.stdin.end(input);
+    if (input !== undefined) {
+      child.stdin.on('error', () => {});
+      child.stdin.end(input);
+    }
   });
+}
+
+function checkTimeout(timeoutMs, max) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > max) {
+    throw bindingError('invalid_timeout', `The timeout must be between 1 and ${max} ms.`);
+  }
 }
 
 function bindingError(code, message) {

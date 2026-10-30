@@ -106,6 +106,13 @@ await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' });
 // 'claude-desktop'；失败时以带 code 的 Error 拒绝
 ```
 
+每次调用最多等待 `timeoutMs`（默认 8000 ms，最大 60000 ms）。所有失败都以 Promise
+拒绝（不会同步抛出），`Error.code` 是 [协议](docs/protocol.md) 的错误码或绑定自己的
+错误码：`invalid_executable`、`invalid_timeout`、`invalid_configuration`、
+`invalid_request`、`unavailable`（可执行文件无法启动）、`invalid_response`、
+`unknown_outcome`。`unknown_outcome` 表示超时后进程已被结束，会话可能已经打开，
+不要自动重试。agent-installer 的绑定使用同样的启动、超时和解析逻辑。
+
 可执行文件一次从 stdin 读取一个 JSON 对象，输出一个 JSON 对象后退出；动作
 `classify`、`clients`、`inspect`、`open` 及错误码见 [协议说明](docs/protocol.md)。
 构建物与宿主系统、CPU 架构匹配，不能把 macOS 构建物当作 Windows/Linux 二进制

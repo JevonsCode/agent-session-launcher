@@ -26,3 +26,8 @@
   opens in a new console window through Windows PowerShell instead of failing.
   `inspect` reports the choice as `plan.opener` (`windows-terminal` or
   `powershell`); `SessionLauncher` takes a `commandAvailable` lookup for tests.
+- Node binding: the spawn, timeout and parse logic is one `runNative` helper
+  shaped like the one in agent-installer's binding. Every failure rejects
+  asynchronously with an `Error` carrying `code`; `timeoutMs` (default 8000,
+  at most 60000) and `unknown_outcome` (never retried automatically) are
+  documented in the README and `index.d.ts`.

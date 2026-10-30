@@ -121,6 +121,16 @@ await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' });
 // 'claude-desktop'; rejects with an Error carrying a code on failure
 ```
 
+Every call waits at most `timeoutMs` (default 8000 ms, at most 60000 ms).
+Every failure rejects — nothing throws synchronously — with an `Error` whose
+`code` is a [protocol](docs/protocol.md) error code or a binding code:
+`invalid_executable`, `invalid_timeout`, `invalid_configuration`,
+`invalid_request`, `unavailable` (the executable could not start),
+`invalid_response`, or `unknown_outcome`. `unknown_outcome` means no answer
+arrived in time and the process was killed; the session may already be open,
+so never retry automatically. The same spawn/timeout/parse helper is used by
+the agent-installer binding.
+
 The executable reads one JSON object from stdin and exits after printing one
 JSON object; the `classify`, `clients`, `inspect`, `open` actions and error
 codes are in the [protocol reference](docs/protocol.md). A build must match

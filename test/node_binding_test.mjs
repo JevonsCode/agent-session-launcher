@@ -79,6 +79,24 @@ test('Node host times out without retrying an uncertain open', async () => {
   }
 });
 
+test('every binding failure rejects asynchronously with a code', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'agent-launch-errors-'));
+  try {
+    let launcher;
+    assert.doesNotThrow(() => { launcher = createLauncher({ executable: 'relative' }); });
+    await assert.rejects(() => launcher.classify('Pi'), error => error instanceof Error && error.code === 'invalid_executable');
+    await assert.rejects(() => createLauncher({ executable: binary, timeoutMs: 60001 }).classify('Pi'),
+      error => error.code === 'invalid_timeout' && /60000 ms/.test(error.message));
+    await assert.rejects(() => createLauncher({ executable: join(directory, 'missing-launcher') }).classify('Pi'),
+      error => error.code === 'unavailable');
+    // Node reads the request as a script, fails and prints no JSON.
+    await assert.rejects(() => createLauncher({ executable: process.execPath }).classify('Pi'),
+      error => error.code === 'invalid_response');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('createLauncher binds the executable and config for every call', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'agent-launch-facade-'));
   try {

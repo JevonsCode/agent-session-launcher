@@ -42,9 +42,12 @@ Error codes include `invalid_request`, `invalid_preferences`,
 `invalid_configuration`, `invalid_target`, `unsupported_client`,
 `client_disabled`, `unsupported_target`, `unsupported_platform`,
 `workspace_missing`, `launch_failed`, `launch_timeout`, and `internal_error`.
-The Node binding can additionally throw `invalid_executable`, `invalid_timeout`,
-`unavailable`, `invalid_response`, or `unknown_outcome`. A timeout may occur
-after an OS launch was requested; do not automatically repeat it.
+The Node binding rejects (never throws synchronously) with these codes and
+additionally `invalid_executable`, `invalid_timeout`, `unavailable`,
+`invalid_response`, or `unknown_outcome`. Its `timeoutMs` defaults to 8000 ms
+(at most 60000 ms); when it passes, the process is killed and the call
+rejects with `unknown_outcome`. That may happen after an OS launch was
+requested, so never repeat it automatically.
 
 The native process optionally accepts `--config /absolute/path/to/config.json`
 and `--extensions /absolute/path/to/extensions` from its trusted host and rereads
