@@ -240,7 +240,8 @@ final class LauncherConfig {
         continue;
       }
       try {
-        final _Extension extension = _Extension.parse(file, builtins);
+        final _Extension? extension = _Extension.parse(file, builtins);
+        if (extension == null) continue;
         final String? taken = extension.labels
             .where(
               (label) => (hostLabels[label] ?? extension.id) != extension.id,
@@ -334,7 +335,9 @@ final class LauncherConfig {
 final class _Extension {
   _Extension._(this.file, this.id, this.client, this.labels);
 
-  factory _Extension.parse(ExtensionFile source, _Builder builtins) {
+  /// Null for a file that only describes how to install into a client; the
+  /// installer reads its `install` section.
+  static _Extension? parse(ExtensionFile source, _Builder builtins) {
     final String file = source.name!;
     final String id = file.endsWith('.json')
         ? file.substring(0, file.length - '.json'.length)
@@ -355,9 +358,12 @@ final class _Extension {
     }
     final Map<String, Object?> client = <String, Object?>{
       for (final MapEntry<String, Object?> entry in json.entries)
-        if (entry.key != r'$schema' && entry.key != 'schemaVersion')
+        if (entry.key != r'$schema' &&
+            entry.key != 'schemaVersion' &&
+            entry.key != 'install')
           entry.key: entry.value,
     };
+    if (client.isEmpty && json.containsKey('install')) return null;
     final _Builder trial = builtins.copy()
       ..merge(id, client, r'$', 'extension', file: file);
     return _Extension._(

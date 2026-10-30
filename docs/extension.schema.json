@@ -1,17 +1,262 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Agent Session Launcher user extension",
-  "description": "One client per file. The file name without .json is the client ID.",
+  "description": "One client per file. The file name without .json is the client ID. A file with only `install` adds or customizes an install target without a launcher client.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion"],
+  "required": [
+    "schemaVersion"
+  ],
   "properties": {
-    "$schema": { "type": "string" },
-    "schemaVersion": { "const": 1 },
-    "name": { "$ref": "config.schema.json#/$defs/client/properties/name" },
-    "enabled": { "$ref": "config.schema.json#/$defs/client/properties/enabled" },
-    "aliases": { "$ref": "config.schema.json#/$defs/client/properties/aliases" },
-    "launch": { "$ref": "config.schema.json#/$defs/client/properties/launch" },
-    "preferences": { "$ref": "config.schema.json#/$defs/preferences" }
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "name": {
+      "$ref": "config.schema.json#/$defs/client/properties/name"
+    },
+    "enabled": {
+      "$ref": "config.schema.json#/$defs/client/properties/enabled"
+    },
+    "aliases": {
+      "$ref": "config.schema.json#/$defs/client/properties/aliases"
+    },
+    "launch": {
+      "$ref": "config.schema.json#/$defs/client/properties/launch"
+    },
+    "preferences": {
+      "$ref": "config.schema.json#/$defs/preferences"
+    },
+    "install": {
+      "description": "Where agent-installer writes a product's integration for this client. Listed keys replace a built-in target's keys.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "os": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "macos",
+              "windows",
+              "linux"
+            ]
+          }
+        },
+        "home": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "default"
+          ],
+          "properties": {
+            "env": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            },
+            "default": {
+              "type": "string",
+              "pattern": "^(~|\\{home\\}|\\{configHome\\}|\\{appData\\})(/[A-Za-z0-9._ +@()-]+)*$",
+              "description": "Starts at ~/, {home}, {configHome} or {appData}."
+            }
+          }
+        },
+        "detect": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "command"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "pattern": "^(~|\\{home\\}|\\{configHome\\}|\\{appData\\})(/[A-Za-z0-9._ +@()-]+)*$",
+                    "description": "Starts at ~/, {home}, {configHome} or {appData}."
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "manualWhenEnv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "file",
+            "format"
+          ],
+          "properties": {
+            "file": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(~|\\{home\\}|\\{configHome\\}|\\{appData\\})(/[A-Za-z0-9._ +@()-]+)*$",
+                  "description": "Starts at ~/, {home}, {configHome} or {appData}."
+                },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^(~|\\{home\\}|\\{configHome\\}|\\{appData\\})(/[A-Za-z0-9._ +@()-]+)*$",
+                    "description": "Starts at ~/, {home}, {configHome} or {appData}."
+                  }
+                }
+              ]
+            },
+            "format": {
+              "enum": [
+                "claude-json",
+                "mcp-servers-json",
+                "kiro-json",
+                "opencode-json",
+                "codex-toml"
+              ]
+            }
+          }
+        },
+        "hooks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "file",
+            "format",
+            "events"
+          ],
+          "properties": {
+            "file": {
+              "type": "string",
+              "pattern": "^(~|\\{home\\}|\\{configHome\\}|\\{appData\\})(/[A-Za-z0-9._ +@()-]+)*$",
+              "description": "Starts at ~/, {home}, {configHome} or {appData}."
+            },
+            "tomlFile": {
+              "type": "string",
+              "pattern": "^(~|\\{home\\}|\\{configHome\\}|\\{appData\\})(/[A-Za-z0-9._ +@()-]+)*$",
+              "description": "Starts at ~/, {home}, {configHome} or {appData}."
+            },
+            "format": {
+              "enum": [
+                "claude-hooks",
+                "codex-hooks",
+                "cursor-hooks"
+              ]
+            },
+            "events": {
+              "type": "object",
+              "propertyNames": {
+                "enum": [
+                  "sessionStart",
+                  "userPromptSubmit",
+                  "stop",
+                  "preCompact"
+                ]
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "permissions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "file"
+          ],
+          "properties": {
+            "file": {
+              "type": "string",
+              "pattern": "^(~|\\{home\\}|\\{configHome\\}|\\{appData\\})(/[A-Za-z0-9._ +@()-]+)*$",
+              "description": "Starts at ~/, {home}, {configHome} or {appData}."
+            }
+          }
+        },
+        "instructions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "file"
+          ],
+          "properties": {
+            "file": {
+              "type": "string",
+              "pattern": "^(~|\\{home\\}|\\{configHome\\}|\\{appData\\})(/[A-Za-z0-9._ +@()-]+)*$",
+              "description": "Starts at ~/, {home}, {configHome} or {appData}."
+            },
+            "overrideFile": {
+              "type": "string",
+              "pattern": "^(~|\\{home\\}|\\{configHome\\}|\\{appData\\})(/[A-Za-z0-9._ +@()-]+)*$",
+              "description": "Starts at ~/, {home}, {configHome} or {appData}."
+            }
+          }
+        },
+        "skills": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dir"
+          ],
+          "properties": {
+            "dir": {
+              "type": "string",
+              "pattern": "^(~|\\{home\\}|\\{configHome\\}|\\{appData\\})(/[A-Za-z0-9._ +@()-]+)*$",
+              "description": "Starts at ~/, {home}, {configHome} or {appData}."
+            }
+          }
+        },
+        "plugins": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dir"
+          ],
+          "properties": {
+            "dir": {
+              "type": "string",
+              "pattern": "^(~|\\{home\\}|\\{configHome\\}|\\{appData\\})(/[A-Za-z0-9._ +@()-]+)*$",
+              "description": "Starts at ~/, {home}, {configHome} or {appData}."
+            }
+          }
+        },
+        "afterInstall": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      }
+    }
   }
 }

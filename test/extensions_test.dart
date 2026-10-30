@@ -372,6 +372,40 @@ void main() {
       },
     ]);
   });
+
+  test('the install section belongs to agent-installer and is ignored', () {
+    final LauncherConfig config = load(<ExtensionFile>[
+      ext('acme-agent.json', <String, Object?>{
+        'name': 'Acme Agent',
+        ...command(<String>['acme', '{id}']),
+        'install': <String, Object?>{'anything': true},
+      }),
+      ext('codex.json', <String, Object?>{'install': <String, Object?>{}}),
+      ext('cursor.json', <String, Object?>{'install': <String, Object?>{}}),
+    ]);
+    expect(config.extensionErrors, isEmpty);
+    expect(config.client('acme-agent')!.launch!.command, <String>[
+      'acme',
+      '{id}',
+    ]);
+    expect(config.client('cursor')!.extensionFile, isNull);
+    expect(
+      () => load(
+        const <ExtensionFile>[],
+        host: <String, Object?>{
+          'acme-agent': <String, Object?>{'install': <String, Object?>{}},
+        },
+      ),
+      throwsA(
+        isA<SessionLaunchException>().having(
+          (e) => e.code,
+          'code',
+          'invalid_configuration',
+        ),
+      ),
+      reason: 'only extension files may carry install',
+    );
+  });
 }
 
 Future<Map<String, Object?>> handleRequestFor(LauncherConfig config) =>

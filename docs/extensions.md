@@ -61,6 +61,12 @@ ID 由小写字母、数字和连字符组成，最长 64 个字符。只读取�
 覆盖内置客户端时，打开方式的类型和 `idSource` 不能改变，`idFormat` 只能收紧。
 `codex`、`claude-code-unknown` 这类同时覆盖多个产品形态的标签不能配置。
 
+文件还可以写 `install` 段，告诉
+[agent-installer](https://github.com/JevonsCode/agent-installer) 把产品接入装在这个
+客户端的哪里。两个组件的约定：同一个目录、文件名即客户端 ID、`schemaVersion: 1`；
+本组件忽略 `install`，agent-installer 只读 `install`；只有 `install` 的文件不会成为
+可打开会话的客户端。
+
 ## 检查
 
 写完后可以在终端里检查：

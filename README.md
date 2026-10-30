@@ -132,6 +132,13 @@ await launcher.classify('Claude Code', { claudeEntrypoint: 'claude-desktop' });
 JSON 路径，不会部分生效。字段、合并规则和不可放宽的约束见
 [宿主配置](docs/configuration.md)，编辑器可使用 [JSON Schema](docs/config.schema.json)。
 
+## 安装到 Agent
+
+把产品接入（MCP、Hook、说明、Skills）装进本机 Agent 的功能在独立仓库
+[agent-installer](https://github.com/JevonsCode/agent-installer)。两者共用本机扩展
+目录：扩展文件里的 `install` 段由它读取，本组件忽略该段，只有 `install` 的文件也不会
+成为可打开会话的客户端。
+
 ## 宿主集成边界
 
 - 宿主负责验证来源和会话归属，再传入明确的 `client`；本组件不会通过扫描其他
