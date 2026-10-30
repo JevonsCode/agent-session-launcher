@@ -33,6 +33,21 @@ Claude Desktop 深链来自本机行为验证，不是这里所能保证的公�
 保存或切换登录账号，打开时使用目标客户端当前的登录状态与配置。`inspect` 的
 `openSupported` 只表示当前平台有实现，并不验证应用、账号或会话存在。
 
+## 下载
+
+每个版本在 [Releases](https://github.com/JevonsCode/agent-session-launcher/releases) 提供编译好的可执行文件，不需要安装 Dart：
+
+| 平台 | 文件 |
+| --- | --- |
+| macOS（Apple 芯片） | `agent-session-launcher-macos-arm64` |
+| macOS（Intel） | `agent-session-launcher-macos-x64` |
+| Linux x64 / arm64 | `agent-session-launcher-linux-x64`、`agent-session-launcher-linux-arm64` |
+| Windows x64 | `agent-session-launcher-windows-x64.exe` |
+
+用同目录的 `SHA256SUMS` 校验。macOS 上通过浏览器下载的文件需要先执行
+`xattr -d com.apple.quarantine <文件>` 并 `chmod +x`；用 `curl` 下载的只需 `chmod +x`。
+Node 宿主把下载的文件路径作为 `executable` 传给绑定即可。
+
 ## 构建与使用
 
 需要 Dart SDK 3.10 或更高版本。DingDong、FULI 等宿主的完整接入步骤与现有设置
