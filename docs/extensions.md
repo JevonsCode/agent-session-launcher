@@ -59,7 +59,7 @@ ID 由小写字母、数字和连字符组成，最长 64 个字符。只读取�
 | --- | --- |
 | `name` | 设置页中显示的名称，默认为 ID。 |
 | `aliases` | Agent 上报的来源标签，不区分大小写和标点。新客户端的 ID 自动算一个。 |
-| `launch.command` | 程序加固定参数，恰好有一个参数是 `{id}`。程序可以是 PATH 中的程序名，也可以是绝对路径或 `~/` 开头的路径。会在会话工作目录中用 Terminal / iTerm / Windows Terminal 打开。 |
+| `launch.command` | 程序加固定参数，恰好有一个参数是 `{id}`。程序可以是 PATH 中的程序名，也可以是绝对路径或 `~/` 开头的路径。会在会话工作目录中用 Terminal / iTerm / Windows Terminal（未安装时用 Windows PowerShell 打开新的控制台窗口）打开。 |
 | `launch.uri` | `scheme://host/path?key=value` 模板，`{id}` 必须是完整的路径段或查询值。不接受 `http(s)`、`file` 等协议。 |
 | `launch.idFormat` | `safe`（默认）或 `uuid`，深链另有 `claude-desktop`、`cursor-background`。 |
 | `preferences` | 只对该客户端生效的终端偏好，例如 `{ "macosTerminal": "iterm" }`。 |

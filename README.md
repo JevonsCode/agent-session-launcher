@@ -30,9 +30,14 @@ there is an explicit Desktop entrypoint, and as CLI when there is an explicit
 from CLI; the host must obtain a reliable source first.
 
 On macOS, CLI sessions open in Terminal or iTerm; on Windows, in Windows
-Terminal. Linux can produce a CLI plan, but interactive terminal opening is
-not yet implemented there. The URI path asks the system to open it, with its
-own implementation on macOS, Windows, and Linux; these capabilities still
+Terminal, or in a new console window through Windows PowerShell when Windows
+Terminal is not installed (the plan's `opener` is `windows-terminal` or
+`powershell`). Linux can produce a CLI plan, but interactive terminal opening
+is not yet implemented there. The URI path asks the system to open it, with
+its own implementation on macOS, Windows, and Linux. On Windows the URI goes
+to `explorer.exe`, which commonly exits with 1 even when it succeeded, so its
+exit code is not treated as a failure; only failing to start it or a timeout
+is. These capabilities still
 depend on the client and the corresponding system component actually being
 installed.
 

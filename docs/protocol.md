@@ -21,11 +21,22 @@ skipped extension files (`file` is absent for a directory problem).
 `inspect` checks the structured target and returns `plan` plus `openSupported`.
 Plans are fixed executable/argument vectors or allow-listed URI shapes. This is
 pure planning: it does not open a client or verify that the target exists.
+On Windows a CLI plan also has `opener`: `windows-terminal` when `wt.exe` is
+on PATH (`wt.exe -d <workspace> <program> <args>`), otherwise `powershell` (a
+new console window started by Windows PowerShell through
+`System.Diagnostics.Process` with every value as a single-quoted literal).
 
 `open` performs an explicit interactive launch with the same validated target.
 Optional `preferences` override the configured terminal preferences.
 `launch_requested` confirms only OS-level launch acceptance. The caller must
 authorize the action and must not expose it as an unauthenticated web endpoint.
+
+A non-zero exit code from the opener is `launch_failed`, with one exception:
+on Windows a URI is handed to `explorer.exe`, which commonly exits with 1 even
+after it passed the URI to the registered app, so its exit code carries no
+outcome. For `explorer.exe` only a failure to start it (`launch_failed`) or no
+answer within 5 seconds (`launch_timeout`) is reported; when no app handles
+the scheme, Windows itself asks the person to choose one.
 
 Error codes include `invalid_request`, `invalid_preferences`,
 `invalid_configuration`, `invalid_target`, `unsupported_client`,

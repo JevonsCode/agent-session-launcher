@@ -16,6 +16,11 @@ export interface LaunchPlan {
   executable?: string;
   arguments?: string[];
   workspacePath?: string;
+  /**
+   * Windows CLI plans only: Windows Terminal when `wt.exe` is on PATH,
+   * otherwise a new console window through Windows PowerShell.
+   */
+  opener?: 'windows-terminal' | 'powershell';
 }
 
 export interface ClientInfo {

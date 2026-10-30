@@ -11,9 +11,11 @@ final class SessionLauncher {
     String? operatingSystem,
     ProcessRunner? processRunner,
     String? homeDirectory,
+    CommandLookup? commandAvailable,
   }) : config = config ?? LauncherConfig.defaults,
        _operatingSystem = operatingSystem ?? Platform.operatingSystem,
        _processRunner = processRunner ?? runProcess,
+       _commandAvailable = commandAvailable ?? isOnPath,
        _homeDirectory =
            homeDirectory ??
            Platform.environment[(operatingSystem ?? Platform.operatingSystem) ==
@@ -24,6 +26,9 @@ final class SessionLauncher {
   final LauncherConfig config;
   final String _operatingSystem;
   final ProcessRunner _processRunner;
+
+  /// Decides whether Windows Terminal can open a CLI plan.
+  final CommandLookup _commandAvailable;
 
   /// Expands a `~/` executable configured by the user.
   final String? _homeDirectory;
@@ -77,12 +82,23 @@ final class SessionLauncher {
           ? target.hostSessionId
           : target.conversationId,
     );
-    final LaunchPlan plan = launch.plan(
-      id,
-      workspacePath: launch.kind == 'cli'
-          ? _validWorkspace(target.workspacePath, _operatingSystem)
-          : null,
+    final LaunchPlan plan = _expandHome(
+      launch.plan(
+        id,
+        workspacePath: launch.kind == 'cli'
+            ? _validWorkspace(target.workspacePath, _operatingSystem)
+            : null,
+      ),
     );
+    if (plan.kind != 'cli' || _operatingSystem != 'windows') return plan;
+    return plan.withOpener(
+      _commandAvailable('wt.exe')
+          ? WindowsOpener.windowsTerminal
+          : WindowsOpener.powershell,
+    );
+  }
+
+  LaunchPlan _expandHome(LaunchPlan plan) {
     final String? executable = plan.executable;
     if (executable == null || !RegExp(r'^~[\\/]').hasMatch(executable)) {
       return plan;

@@ -27,9 +27,12 @@ protocol for Node.js and other hosts. Background Agent execution is out of scope
 entrypoint 时归为 `claude-desktop`，有明确的 `Claude Code CLI` 来源时归为 CLI。
 OpenCode 的某些事件也不区分 Desktop 和 CLI，宿主必须先取得可靠来源。
 
-macOS CLI 使用 Terminal 或 iTerm；Windows 使用 Windows Terminal。Linux 可以
-生成 CLI 计划，但目前没有实现交互式终端打开。URI 路径在 macOS、Windows、Linux
-分别请求系统打开；这些能力仍依赖客户端和对应系统组件实际安装。
+macOS CLI 使用 Terminal 或 iTerm；Windows 使用 Windows Terminal，没有安装时改用
+Windows PowerShell 打开一个新的控制台窗口（计划中的 `opener` 为 `windows-terminal`
+或 `powershell`）。Linux 可以生成 CLI 计划，但目前没有实现交互式终端打开。URI
+路径在 macOS、Windows、Linux 分别请求系统打开；这些能力仍依赖客户端和对应系统
+组件实际安装。Windows 上 URI 交给 `explorer.exe`，它即使成功也常以 1 退出，所以
+它的退出码不算失败，只有无法启动或超时才报错。
 
 Claude Desktop 深链来自本机行为验证，不是这里所能保证的公开稳定契约。组件不识别、
 保存或切换登录账号，打开时使用目标客户端当前的登录状态与配置。`inspect` 的
