@@ -248,7 +248,10 @@ void main() {
   });
 
   group('prompt rules', () {
-    final launcher = SessionLauncher(operatingSystem: 'macos');
+    final launcher = SessionLauncher(
+      operatingSystem: 'macos',
+      homeDirectory: '/home/someone',
+    );
     test('refuses empty, oversized, control and option-shaped prompts', () {
       for (final prompt in <String>[
         '',
@@ -769,6 +772,7 @@ void main() {
       );
       final custom = SessionLauncher(
         operatingSystem: 'macos',
+        homeDirectory: '/home/someone',
         config: LauncherConfig.fromJson(<String, Object?>{
           'schemaVersion': 1,
           'clients': <String, Object?>{
