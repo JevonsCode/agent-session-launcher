@@ -179,3 +179,21 @@ test('defaultExtensionsDirectory reads a 0.3 directory until the shared one exis
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('createLauncher plans a new session with a prompt as plain data', async () => {
+  const launcher = createLauncher({ executable: binary });
+  const prompt = '#FLA Tonborg 讲讲 "这个" & %PATH%\nnext line';
+  const { plan, openSupported } = await launcher.inspectNew({ client: 'gemini-cli', prompt });
+  assert.equal(openSupported, true);
+  assert.equal(plan.newSession, true);
+  assert.equal(plan.prompt, 'send');
+  assert.equal(plan.executable, 'gemini');
+  assert.deepEqual(plan.arguments, ['-i', prompt]);
+  const link = await launcher.inspectNew({ client: 'codex-desktop', prompt: 'a b' });
+  assert.equal(link.plan.uri, 'codex://new?prompt=a%20b');
+  const { clients } = await launcher.clients();
+  assert.deepEqual(clients.find(c => c.id === 'opencode-cli').newSession,
+    { kind: 'cli', prompt: 'send', openSupported: true });
+  await assert.rejects(() => launcher.inspectNew({ client: 'claude-code', prompt: '--yolo' }),
+    error => error.code === 'invalid_prompt');
+});

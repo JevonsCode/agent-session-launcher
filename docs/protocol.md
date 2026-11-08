@@ -24,24 +24,65 @@ pure planning: it does not open a client or verify that the target exists.
 On Windows a CLI plan also has `opener`: `windows-terminal` when `wt.exe` is
 on PATH (`wt.exe -d <workspace> <program> <args>`), otherwise `powershell` (a
 new console window started by Windows PowerShell through
-`System.Diagnostics.Process` with every value as a single-quoted literal).
+`System.Diagnostics.Process` with every value as a single-quoted literal). On
+Linux it names the terminal program found, in this order:
+`x-terminal-emulator`, `gnome-terminal`, `konsole`, `xfce4-terminal`, `kitty`,
+`alacritty`, `wezterm`, `foot`, `xterm`. The terminal runs
+`sh -c 'cd -- "$1" && shift && exec "$@"'` with the workspace, program and
+arguments as positional parameters.
 
 `open` performs an explicit interactive launch with the same validated target.
 Optional `preferences` override the configured terminal preferences.
 `launch_requested` confirms only OS-level launch acceptance. The caller must
 authorize the action and must not expose it as an unauthenticated web endpoint.
 
-A non-zero exit code from the opener is `launch_failed`, with one exception:
-on Windows a URI is handed to `explorer.exe`, which commonly exits with 1 even
-after it passed the URI to the registered app, so its exit code carries no
-outcome. For `explorer.exe` only a failure to start it (`launch_failed`) or no
-answer within 5 seconds (`launch_timeout`) is reported; when no app handles
-the scheme, Windows itself asks the person to choose one.
+## New sessions
+
+`inspect-new` and `open-new` take
+`target: { client, prompt?, workspacePath?, environment? }` and otherwise
+behave like `inspect` and `open`. `clients` reports each client's way as
+`newSession: { kind, prompt, openSupported }` (`prompt` is `prefill`, `send`,
+or `null` when the way takes none), or `newSession: null`. The verified ways
+and their sources are in [clients.md](clients.md).
+
+- `prompt` is 1–2000 characters of text; tabs and line breaks are allowed,
+  other control characters are not, and a CLI prompt may not begin with `-`
+  (the client would read it as an option). It is always one argument or one
+  percent-encoded URI query value, never shell text. A plan reports what the
+  client does with it as `plan.prompt`. A prompt for a way that takes none is
+  `unsupported_prompt`.
+- `workspacePath` is where a CLI starts; without it, the home directory.
+- `environment: "wsl"` (Windows, CLI only) runs the client inside the default
+  WSL distribution: `wsl.exe --cd <workspace or ~> --exec bash -lic '…'
+  <program> <args>`, so the person's shell profile puts it on PATH; a `~/`
+  program is expanded there.
+
+On Windows a new CLI session runs one PowerShell script passed as
+`-EncodedCommand` (in Windows Terminal, or a new console window), so neither
+Windows Terminal's `;` splitting nor PowerShell's argument passing ever sees
+the prompt. The script finds the program on PATH, builds its command line with
+the C runtime's quoting, or with Rust's batch-file quoting for an npm-style
+`.cmd` shim run through `cmd.exe` (where line breaks become spaces and `%`
+cannot expand a variable), starts it in the console without the variables a
+parent Agent session sets (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`,
+`CODEX_THREAD_ID`, …), waits for it, and passes its exit code on. When the
+program is missing it says so and waits for Enter. Linux terminals also drop
+those variables; macOS Terminal and iTerm start a fresh login shell.
+
+## Exit codes and errors
+
+A non-zero exit code from the opener is `launch_failed`. On Windows a URI is
+opened by `ShellExecute` through Windows PowerShell
+(`System.Diagnostics.Process` with `UseShellExecute`), the same way a click
+opens it, so a scheme no app handles fails with `launch_failed`. Version 0.4
+used `explorer.exe <uri>`, which opened the Documents folder instead of the
+app for `codex://` and `cursor://` links with a query on Windows 11.
 
 Error codes include `invalid_request`, `invalid_preferences`,
-`invalid_configuration`, `invalid_target`, `unsupported_client`,
-`client_disabled`, `unsupported_target`, `unsupported_platform`,
-`workspace_missing`, `launch_failed`, `launch_timeout`, and `internal_error`.
+`invalid_configuration`, `invalid_target`, `invalid_prompt`,
+`unsupported_client`, `unsupported_prompt`, `client_disabled`,
+`unsupported_target`, `unsupported_platform`, `workspace_missing`,
+`launch_failed`, `launch_timeout`, and `internal_error`.
 The Node binding rejects (never throws synchronously) with these codes and
 additionally `invalid_executable`, `invalid_timeout`, `unavailable`,
 `invalid_response`, or `unknown_outcome`. Its `timeoutMs` defaults to 8000 ms

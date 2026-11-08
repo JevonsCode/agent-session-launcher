@@ -118,6 +118,24 @@ host's `claude` becomes `claude-code` or `claude-desktop`, decided by
 `classify`). Avoid substring checks such as "contains claude": they cannot
 tell Claude Desktop from Claude Code CLI.
 
+## Opening a new session with a prompt
+
+`clients()` says, per client, whether a new session can open and what the
+client does with a prompt (`newSession.prompt`: `prefill`, `send` or `null`).
+Show that to the person (a prompt that is sent at once is an action), then
+call `openNew({ client, prompt, workspacePath })` only on their click; it is
+the same trust boundary as `open`. On Windows, pass `environment: 'wsl'` for a
+CLI the person installed in WSL. Keep the prompt short and on its own; the
+client's own tools carry the rest.
+
+```javascript
+const { clients } = await launcher.clients();
+const gemini = clients.find(c => c.id === 'gemini-cli');
+if (gemini?.newSession?.openSupported) {
+  await launcher.openNew({ client: 'gemini-cli', prompt: 'Explain the open decisions' });
+}
+```
+
 ## Acceptance
 
 Verify each host separately: the source is classified correctly, the

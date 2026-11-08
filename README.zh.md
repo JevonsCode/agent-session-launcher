@@ -4,8 +4,8 @@
 
 本地 Agent 会话打开组件，可供 Flutter/Dart 应用和 Node.js 宿主复用。它接收一个
 **已由宿主确认来源的会话目标**，生成固定的深链或 CLI 参数；只有显式请求 `open`
-时才会尝试调用操作系统打开会话。它不保存会话、不运行模型、不向 Agent 发送消息，
-也不提供 HTTP 服务。
+时才会尝试调用操作系统打开会话。它也能打开一个**新**会话，并可把一段提示词作为
+普通数据交给客户端。它不保存会话、不运行模型、不与 Agent 对话，也不提供 HTTP 服务。
 
 This is a local interactive session launcher with a Dart API and a one-shot JSON
 protocol for Node.js and other hosts. Background Agent execution is out of scope.
@@ -20,6 +20,17 @@ protocol for Node.js and other hosts. Background Agent execution is out of scope
 | `claude-code`, `gemini-cli`, `copilot-cli`, `grok-build` | 会话 ID 和工作目录 | 各客户端的 CLI 恢复命令 |
 | `pi`, `codex-cli` | 完整 UUID 和工作目录 | 各客户端的 CLI 恢复命令 |
 | `opencode-cli`, `antigravity-cli`, `kiro-cli` | 会话 ID 和工作目录 | 各客户端的 CLI 恢复命令 |
+| `cursor-cli`, `qwen-code`, `qoder-cli`, `kilo-cli`, `devin-cli`, `amp` | 会话 ID 和工作目录 | 各客户端的 CLI 恢复命令 |
+| `claude-code-vscode`, `claude-chat`, `goose-desktop` | 会话或对话 ID | 各客户端的深链 |
+
+**新会话**（`inspectNew` / `openNew`）：26 个客户端的打开方式、官方来源和
+Windows 实测结果见 [docs/clients.md](docs/clients.md)。CLI 客户端（Claude Code、
+Codex、Cursor、Copilot、Gemini、Antigravity、OpenCode、Qwen Code、Qoder、Junie、
+Kilo、Devin、Pi）在新终端窗口里启动，提示词作为第一条消息发出；应用和 IDE 客户端
+（Codex 应用、Claude Desktop、VS Code 里的 Claude Code、Cursor、VS Code 里的
+Copilot、Qoder、Zed、Goose、Cline）打开新对话，提示词留在输入框等人发送（Cline
+会直接开始任务）。Windows 上装在 WSL 里的 CLI 通过 `wsl.exe` 启动
+（`environment: "wsl"`）。
 
 `codex`、`claude-code-unknown`、`opencode`、`opencode-desktop`、通用
 `antigravity`、Antigravity App/IDE、通用 Copilot 和 Windsurf 不会被猜成 CLI。
@@ -29,10 +40,9 @@ OpenCode 的某些事件也不区分 Desktop 和 CLI，宿主必须先取得可�
 
 macOS CLI 使用 Terminal 或 iTerm；Windows 使用 Windows Terminal，没有安装时改用
 Windows PowerShell 打开一个新的控制台窗口（计划中的 `opener` 为 `windows-terminal`
-或 `powershell`）。Linux 可以生成 CLI 计划，但目前没有实现交互式终端打开。URI
-路径在 macOS、Windows、Linux 分别请求系统打开；这些能力仍依赖客户端和对应系统
-组件实际安装。Windows 上 URI 交给 `explorer.exe`，它即使成功也常以 1 退出，所以
-它的退出码不算失败，只有无法启动或超时才报错。
+或 `powershell`）；Linux 使用找到的第一个终端，先试系统默认的
+`x-terminal-emulator`。URI 路径在 macOS、Windows（`ShellExecute`，与点击链接相同）、
+Linux（`xdg-open`）分别请求系统打开；这些能力仍依赖客户端和对应系统组件实际安装。
 
 Claude Desktop 深链来自本机行为验证，不是这里所能保证的公开稳定契约。组件不识别、
 保存或切换登录账号，打开时使用目标客户端当前的登录状态与配置。`inspect` 的

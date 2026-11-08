@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:agent_session_launcher/agent_session_launcher.dart';
 import 'package:agent_session_launcher/src/platform.dart'
-    show windowsStartProcessScript;
+    show parentSessionVariables, windowsStartProcessScript;
 import 'package:test/test.dart';
 
 Matcher failsWith(String code) =>
@@ -198,18 +198,65 @@ void main() {
   });
 
   test(
-    'Linux CLI plans are explicit about lack of an interactive launcher',
-    () {
-      final launcher = SessionLauncher(operatingSystem: 'linux');
+    'Linux CLI plans open in the first terminal found, as an argv',
+    () async {
+      String? started;
+      List<String>? arguments;
+      final launcher = SessionLauncher(
+        operatingSystem: 'linux',
+        commandAvailable: (command) =>
+            command == 'konsole' || command == 'xterm',
+        detachedStarter: (executable, args) async {
+          started = executable;
+          arguments = args;
+        },
+      );
       final plan = launcher.inspect(
-        const SessionTarget(
+        SessionTarget(
           client: 'claude-code',
           conversationId: 'session-123',
-          workspacePath: '/workspace',
+          workspacePath: Directory.systemTemp.path,
         ),
       );
-      expect(launcher.supportsOpening(plan), isFalse);
+      expect(plan.opener, 'konsole');
+      expect(launcher.supportsOpening(plan), isTrue);
+      await launcher.open(
+        SessionTarget(
+          client: 'claude-code',
+          conversationId: 'session-123',
+          workspacePath: Directory.systemTemp.path,
+        ),
+      );
+      expect(started, 'konsole');
+      expect(arguments, <String>[
+        '-e',
+        'sh',
+        '-c',
+        'unset ${parentSessionVariables.join(' ')}; '
+            r'cd -- "$1" && shift && exec "$@"',
+        'sh',
+        Directory.systemTemp.path,
+        'claude',
+        '--resume',
+        'session-123',
+      ]);
+      final none = SessionLauncher(
+        operatingSystem: 'linux',
+        commandAvailable: (_) => false,
+        detachedStarter: (_, _) async => fail('nothing may start'),
+      );
+      expect(
+        () => none.open(
+          SessionTarget(
+            client: 'claude-code',
+            conversationId: 'session-123',
+            workspacePath: Directory.systemTemp.path,
+          ),
+        ),
+        failsWith('unsupported_platform'),
+      );
     },
+    skip: Platform.isWindows ? 'A Linux workspace needs a POSIX path.' : false,
   );
 
   test('Windows plans accept absolute drive and UNC paths only', () {
@@ -356,11 +403,11 @@ void main() {
       return ProcessResult(1, exitCode, '', '');
     };
 
-    test('an explorer.exe exit code alone is not a failed launch', () async {
+    test('a URI goes to ShellExecute as a single-quoted literal', () async {
       final calls = <(String, List<String>)>[];
       final launcher = SessionLauncher(
         operatingSystem: 'windows',
-        processRunner: recorder(calls, exitCode: 1),
+        processRunner: recorder(calls, exitCode: 0),
       );
       await launcher.open(
         const SessionTarget(
@@ -368,13 +415,31 @@ void main() {
           conversationId: 'a45cce14-b0be-4aea-a8f9-e88195674770',
         ),
       );
-      expect(calls.single.$1, 'explorer.exe');
-      expect(calls.single.$2, <String>[
-        'codex://threads/a45cce14-b0be-4aea-a8f9-e88195674770',
-      ]);
+      expect(calls.single.$1, 'powershell.exe');
+      expect(
+        calls.single.$2.last,
+        contains(
+          r"$info.FileName = 'codex://threads/a45cce14-b0be-4aea-a8f9-e88195674770'",
+        ),
+      );
+      expect(calls.single.$2.last, contains(r'$info.UseShellExecute = $true'));
+      // A scheme without a handler makes Process.Start throw.
+      final failing = SessionLauncher(
+        operatingSystem: 'windows',
+        processRunner: recorder(calls, exitCode: 1),
+      );
+      expect(
+        failing.open(
+          const SessionTarget(
+            client: 'codex-desktop',
+            conversationId: 'a45cce14-b0be-4aea-a8f9-e88195674770',
+          ),
+        ),
+        failsWith('launch_failed'),
+      );
     });
 
-    test('explorer.exe that cannot start still fails the launch', () async {
+    test('PowerShell that cannot start fails the launch', () async {
       final launcher = SessionLauncher(
         operatingSystem: 'windows',
         processRunner: (command, args, {workingDirectory}) async =>

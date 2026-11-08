@@ -104,6 +104,77 @@ final class LaunchSpec {
   }
 }
 
+/// A validated way to open a new session. Only the `{prompt}` token is ever
+/// substituted, and only when the request has a prompt; without one,
+/// [promptArguments] or the prompt's query parameter are left out.
+final class NewSessionSpec {
+  const NewSessionSpec._({
+    required this.kind,
+    required this.prompt,
+    this.command = const <String>[],
+    this.promptArguments = const <String>[],
+    this.scheme,
+    this.host,
+    this.pathSegments = const <String>[],
+    this.query = const <String, String>{},
+  });
+
+  /// `cli` or `uri`.
+  final String kind;
+
+  /// [PromptHandling.prefill] or [PromptHandling.send]; null when this way
+  /// takes no prompt.
+  final String? prompt;
+
+  /// Executable followed by fixed arguments, for `cli`.
+  final List<String> command;
+
+  /// Appended after [command] when there is a prompt; `{prompt}` exactly once.
+  final List<String> promptArguments;
+  final String? scheme;
+  final String? host;
+  final List<String> pathSegments;
+
+  /// Fixed values, and `{prompt}` for the one parameter that carries it.
+  final Map<String, String> query;
+
+  LaunchPlan plan(String? text, {String? workspacePath}) {
+    if (kind == 'cli') {
+      return LaunchPlan(
+        kind: 'cli',
+        executable: command.first,
+        arguments: List<String>.unmodifiable(<String>[
+          ...command.skip(1),
+          if (text != null)
+            for (final String token in promptArguments)
+              token == '{prompt}' ? text : token,
+        ]),
+        workspacePath: workspacePath,
+        newSession: true,
+        prompt: text == null ? null : prompt,
+      );
+    }
+    // Every value is percent-encoded (a space is %20, never +), which every
+    // handler decodes the same way.
+    final String path = pathSegments.map((s) => '/$s').join();
+    final List<String> pairs = <String>[
+      for (final MapEntry<String, String> entry in query.entries)
+        if (entry.value != '{prompt}')
+          '${entry.key}=${entry.value}'
+        else if (text != null)
+          '${entry.key}=${Uri.encodeComponent(text)}',
+    ];
+    return LaunchPlan(
+      kind: 'uri',
+      uri: Uri.parse(
+        '$scheme://$host$path${pairs.isEmpty ? '' : '?${pairs.join('&')}'}',
+      ),
+      newSession: true,
+      prompt: text == null ? null : prompt,
+    );
+  }
+}
+
 /// One client after merging the built-in catalog, user extensions and host
 /// configuration.
 final class ClientDefinition {
@@ -117,6 +188,7 @@ final class ClientDefinition {
     this.extensionFile,
     this.ambiguous = false,
     this.launch,
+    this.newSession,
     this.preferences,
   });
 
@@ -139,6 +211,9 @@ final class ClientDefinition {
 
   /// Null when no verified opening method exists.
   final LaunchSpec? launch;
+
+  /// Null when no verified way to open a new session exists.
+  final NewSessionSpec? newSession;
   final LaunchPreferences? preferences;
 }
 
@@ -383,7 +458,12 @@ final class _Extension {
 }
 
 final class _Builder {
-  _Builder._(this.clients, this.aliases, this.catalogLaunch);
+  _Builder._(
+    this.clients,
+    this.aliases,
+    this.catalogLaunch,
+    this.catalogNewSession,
+  );
 
   /// The built-in catalog, which is the only layer that may mark a client
   /// `ambiguous`.
@@ -392,6 +472,7 @@ final class _Builder {
       <String, ClientDefinition>{},
       <String, String>{},
       <String, LaunchSpec?>{},
+      <String, NewSessionSpec?>{},
     );
     for (final MapEntry<String, Object?> entry in builtinClients.entries) {
       builder._add(
@@ -402,6 +483,8 @@ final class _Builder {
         null,
       );
       builder.catalogLaunch[entry.key] = builder.clients[entry.key]!.launch;
+      builder.catalogNewSession[entry.key] =
+          builder.clients[entry.key]!.newSession;
     }
     return builder;
   }
@@ -412,10 +495,14 @@ final class _Builder {
   /// Built-in launch definitions, which later layers may not weaken.
   final Map<String, LaunchSpec?> catalogLaunch;
 
+  /// Built-in new-session definitions, whose kind later layers keep.
+  final Map<String, NewSessionSpec?> catalogNewSession;
+
   _Builder copy() => _Builder._(
     Map<String, ClientDefinition>.of(clients),
     Map<String, String>.of(aliases),
     catalogLaunch,
+    catalogNewSession,
   );
 
   /// Labels present here but not in [earlier], with the client they identify.
@@ -456,6 +543,7 @@ final class _Builder {
       'enabled',
       'aliases',
       'launch',
+      'newSession',
       'preferences',
       if (catalog) 'ambiguous',
     }, path);
@@ -498,6 +586,13 @@ final class _Builder {
             pinned: catalogLaunch[id],
           )
         : base?.launch;
+    final NewSessionSpec? newSession = json.containsKey('newSession')
+        ? _newSession(
+            json['newSession'],
+            '$path.newSession',
+            pinned: catalogNewSession[id],
+          )
+        : base?.newSession;
     final LaunchPreferences? preferences = json.containsKey('preferences')
         ? LaunchPreferences.fromJson(
             json['preferences'],
@@ -518,9 +613,133 @@ final class _Builder {
       extensionFile: file ?? base?.extensionFile,
       ambiguous: json['ambiguous'] == true,
       launch: launch,
+      newSession: newSession,
       preferences: preferences,
     );
   }
+}
+
+/// [pinned] is the built-in definition, whose kind stays fixed.
+NewSessionSpec _newSession(Object? raw, String path, {NewSessionSpec? pinned}) {
+  final Map<String, Object?> json = _object(raw, path);
+  _keys(json, const {'command', 'promptArguments', 'uri', 'prompt'}, path);
+  if (json.containsKey('command') == json.containsKey('uri')) {
+    _fail(path, 'specify exactly one of "command" or "uri".');
+  }
+  final String kind = json.containsKey('command') ? 'cli' : 'uri';
+  if (pinned != null && pinned.kind != kind) {
+    _fail(path, 'a built-in ${pinned.kind} client must keep the same kind.');
+  }
+  String? prompt;
+  if (json.containsKey('prompt')) {
+    final Object? value = json['prompt'];
+    if (!PromptHandling.values.contains(value)) {
+      _fail('$path.prompt', 'must be "prefill" or "send".');
+    }
+    prompt = value! as String;
+  }
+  if (kind == 'cli') {
+    final Object? list = json['command'];
+    if (list is! List || list.isEmpty || list.length > 16) {
+      _fail('$path.command', 'must be [executable, ...arguments].');
+    }
+    final List<String> command = <String>[
+      for (final Object? token in list) _text(token, '$path.command'),
+    ];
+    if (!_isExecutable(command.first)) {
+      _fail(
+        '$path.command',
+        'the executable must be a program name or an absolute or ~/ path, '
+            'not shell text.',
+      );
+    }
+    if (command.skip(1).any((t) => !_argToken.hasMatch(t))) {
+      _fail('$path.command', 'arguments may not contain shell syntax.');
+    }
+    List<String> promptArguments = const <String>[];
+    if (json.containsKey('promptArguments')) {
+      final Object? raw = json['promptArguments'];
+      if (raw is! List || raw.isEmpty || raw.length > 8) {
+        _fail('$path.promptArguments', 'must be a short list of arguments.');
+      }
+      promptArguments = <String>[
+        for (final Object? token in raw) _text(token, '$path.promptArguments'),
+      ];
+      if (promptArguments.where((t) => t == '{prompt}').length != 1 ||
+          promptArguments.any(
+            (t) => t != '{prompt}' && !_argToken.hasMatch(t),
+          )) {
+        _fail(
+          '$path.promptArguments',
+          'must contain "{prompt}" exactly once and otherwise plain arguments.',
+        );
+      }
+    }
+    if ((prompt == null) != promptArguments.isEmpty) {
+      _fail(path, '"prompt" and "promptArguments" go together.');
+    }
+    return NewSessionSpec._(
+      kind: 'cli',
+      prompt: prompt,
+      command: List<String>.unmodifiable(command),
+      promptArguments: List<String>.unmodifiable(promptArguments),
+    );
+  }
+  if (json.containsKey('promptArguments')) {
+    _fail('$path.promptArguments', 'applies only to "command" launches.');
+  }
+  final String template = _text(json['uri'], '$path.uri', maxLength: 1024);
+  final RegExpMatch? match = _uriTemplate.firstMatch(template);
+  if (match == null) {
+    _fail('$path.uri', 'must look like scheme://host/path?key={prompt}.');
+  }
+  final String scheme = match.group(1)!;
+  if (_blockedSchemes.contains(scheme)) {
+    _fail('$path.uri', 'web, file and script schemes are not allowed.');
+  }
+  final List<String> segments = match
+      .group(3)!
+      .split('/')
+      .where((s) => s.isNotEmpty)
+      .toList();
+  final Map<String, String> query = <String, String>{};
+  final String rawQuery = match.group(4) ?? '';
+  for (final String pair
+      in rawQuery.isEmpty ? <String>[] : rawQuery.split('&')) {
+    final int equals = pair.indexOf('=');
+    final String key = equals < 0 ? pair : pair.substring(0, equals);
+    final String value = equals < 0 ? '' : pair.substring(equals + 1);
+    if (!_uriToken.hasMatch(key) || query.containsKey(key)) {
+      _fail('$path.uri', 'query keys must be unique plain tokens.');
+    }
+    query[key] = value;
+  }
+  if (segments.any((t) => !_uriToken.hasMatch(t)) ||
+      query.values.any((t) => t != '{prompt}' && !_uriToken.hasMatch(t)) ||
+      query.length > 16 ||
+      segments.length > 32) {
+    _fail(
+      '$path.uri',
+      'path and query values must be plain tokens; "{prompt}" only as a query '
+          'value.',
+    );
+  }
+  final int prompts = query.values.where((t) => t == '{prompt}').length;
+  if (prompts > 1 || (prompts == 1) != (prompt != null)) {
+    _fail(
+      '$path.uri',
+      'a "{prompt}" query value appears exactly once when "prompt" is set, '
+          'and not otherwise.',
+    );
+  }
+  return NewSessionSpec._(
+    kind: 'uri',
+    prompt: prompt,
+    scheme: scheme,
+    host: match.group(2),
+    pathSegments: List<String>.unmodifiable(segments),
+    query: Map<String, String>.unmodifiable(query),
+  );
 }
 
 /// [inherit] supplies unset ID rules; [pinned] is the built-in definition,
