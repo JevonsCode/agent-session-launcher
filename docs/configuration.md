@@ -38,6 +38,7 @@
 | `clients.<id>.enabled` | `false` 时仍能识别来源，但 `inspect` / `open` 返回 `client_disabled`。 |
 | `clients.<id>.aliases` | 追加的来源标签（不区分大小写和标点）。新增客户端的 ID 自动成为标签。 |
 | `clients.<id>.launch` | 打开方式，整体替换内置值，见下文。 |
+| `clients.<id>.newSession` | 新会话的打开方式，可带提示词，整体替换内置值，见下文「新会话」。 |
 | `clients.<id>.preferences` | 只对该客户端生效的终端偏好。 |
 
 合并规则：列出的字段替换内置值，`aliases` 是追加，未列出的客户端和字段保持
@@ -66,6 +67,33 @@
 | --- | --- |
 | `idSource` | 仅深链：`conversationId`（默认）或 `hostSessionId`。 |
 | `idFormat` | `safe`（默认）、`uuid`；深链还可以用 `claude-desktop`、`cursor-background`。 |
+
+## 新会话
+
+`newSession` 描述怎样打开一个新会话，可选带一段提示词（`inspect-new` /
+`open-new`，见 [protocol.md](protocol.md#new-sessions)）。内置客户端的取值和官方
+来源见 [clients.md](clients.md)。
+
+**CLI**：`command` 是程序加固定参数（规则同上，但不含 `{id}`）；
+`promptArguments` 只在请求带提示词时追加，其中 `{prompt}` 恰好出现一次，提示词
+作为一个完整参数传给客户端，从不经过 Shell。
+
+```json
+{ "command": ["gemini"], "promptArguments": ["-i", "{prompt}"], "prompt": "send" }
+```
+
+**深链**：`uri` 模板的路径和查询值都是普通字符；带提示词时，恰好一个查询值是
+`{prompt}`，请求没有提示词时这个参数整体省略。提示词按百分号编码（空格是
+`%20`，不是 `+`）。
+
+```json
+{ "uri": "codex://new?prompt={prompt}", "prompt": "prefill" }
+```
+
+`prompt` 说明客户端收到提示词后做什么：`prefill`（放进输入框，由人发送）或
+`send`（作为第一条消息直接发送）。不写 `prompt` 也不写 `promptArguments` /
+`{prompt}` 时，这种方式只打开新会话，请求带提示词会返回 `unsupported_prompt`。
+覆盖内置客户端时，`newSession` 的 `cli` / `uri` 类型不能改变。
 
 ## 不可放宽的约束
 

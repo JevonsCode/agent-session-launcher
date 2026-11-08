@@ -8,6 +8,11 @@ typedef ProcessRunner =
       String? workingDirectory,
     });
 
+/// Starts a program that keeps running on its own, such as a Linux terminal
+/// window; completion means it started.
+typedef DetachedStarter =
+    Future<void> Function(String executable, List<String> arguments);
+
 final class SessionTarget {
   const SessionTarget({
     required this.client,
@@ -20,6 +25,49 @@ final class SessionTarget {
   final String? conversationId;
   final String? workspacePath;
   final String? hostSessionId;
+}
+
+/// A new session or conversation in [client], optionally with a [prompt].
+///
+/// The prompt is data for the client, never a command: each opener passes it
+/// as one argument or one URI query value. What the client then does with it
+/// is its [NewSessionInfo.prompt] (`prefill` or `send`).
+final class NewSessionTarget {
+  const NewSessionTarget({
+    required this.client,
+    this.prompt,
+    this.workspacePath,
+    this.environment,
+  });
+
+  final String client;
+  final String? prompt;
+
+  /// Where a CLI starts; the home directory when null. Unused for URIs.
+  final String? workspacePath;
+
+  /// [RunEnvironment.wsl]: on Windows, the CLI is installed in the default
+  /// WSL distribution and runs there. Null runs it on this system.
+  final String? environment;
+}
+
+/// The values of [NewSessionTarget.environment].
+abstract final class RunEnvironment {
+  /// The default distribution of Windows Subsystem for Linux, through
+  /// `wsl.exe --cd <dir> --exec bash -lic ...`, so the person's shell profile
+  /// puts the client on PATH.
+  static const String wsl = 'wsl';
+}
+
+/// What a client does with the prompt of a new session.
+abstract final class PromptHandling {
+  /// The prompt waits in the composer until the person sends it.
+  static const String prefill = 'prefill';
+
+  /// The client submits the prompt as the session's first message.
+  static const String send = 'send';
+
+  static const Set<String> values = <String>{prefill, send};
 }
 
 final class SessionLaunchException implements Exception {
@@ -39,6 +87,9 @@ final class LaunchPlan {
     this.arguments = const <String>[],
     this.workspacePath,
     this.opener,
+    this.newSession = false,
+    this.prompt,
+    this.environment,
   });
   final String kind;
   final Uri? uri;
@@ -46,10 +97,22 @@ final class LaunchPlan {
   final List<String> arguments;
   final String? workspacePath;
 
-  /// How a CLI plan is opened on Windows: [WindowsOpener.windowsTerminal]
-  /// when `wt.exe` is on PATH, otherwise [WindowsOpener.powershell]. Null on
-  /// other platforms and for URI plans.
+  /// How a CLI plan is opened: on Windows [WindowsOpener.windowsTerminal]
+  /// when `wt.exe` is on PATH, otherwise [WindowsOpener.powershell]; on Linux
+  /// the terminal program found (one of [linuxTerminalPrograms]). Null on
+  /// macOS and for URI plans.
   final String? opener;
+
+  /// The plan starts a new session instead of resuming one.
+  final bool newSession;
+
+  /// For a new session that carries a prompt: what the client does with it
+  /// ([PromptHandling]). Null when there is no prompt.
+  final String? prompt;
+
+  /// [RunEnvironment.wsl] when [executable] is `wsl.exe` running the client
+  /// inside WSL; null otherwise.
+  final String? environment;
 
   LaunchPlan withOpener(String? value) => LaunchPlan(
     kind: kind,
@@ -58,6 +121,9 @@ final class LaunchPlan {
     arguments: arguments,
     workspacePath: workspacePath,
     opener: value,
+    newSession: newSession,
+    prompt: prompt,
+    environment: environment,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -67,8 +133,26 @@ final class LaunchPlan {
     if (kind == 'cli') 'arguments': arguments,
     if (workspacePath != null) 'workspacePath': workspacePath,
     if (opener != null) 'opener': opener,
+    if (newSession) 'newSession': true,
+    if (prompt != null) 'prompt': prompt,
+    if (environment != null) 'environment': environment,
   };
 }
+
+/// The Linux terminal programs tried in order for a CLI plan. Each takes the
+/// command as an argument vector, never as shell text.
+/// `x-terminal-emulator` is the system default on Debian and Ubuntu.
+const List<String> linuxTerminalPrograms = <String>[
+  'x-terminal-emulator',
+  'gnome-terminal',
+  'konsole',
+  'xfce4-terminal',
+  'kitty',
+  'alacritty',
+  'wezterm',
+  'foot',
+  'xterm',
+];
 
 /// The values of [LaunchPlan.opener].
 abstract final class WindowsOpener {
@@ -165,12 +249,16 @@ final class ClientInfo {
     this.kind,
     this.idSource,
     this.idFormat,
+    this.newSession,
   });
 
   final String id;
   final String name;
   final bool enabled;
   final bool builtin;
+
+  /// How a new session opens, or null without a verified way.
+  final NewSessionInfo? newSession;
 
   /// Where the client was first defined: `builtin`, `extension` or `host`.
   final String origin;
@@ -199,6 +287,32 @@ final class ClientInfo {
     if (idSource != null) 'idSource': idSource,
     if (idFormat != null) 'idFormat': idFormat,
     'requiresWorkspace': requiresWorkspace,
+    'openSupported': openSupported,
+    'newSession': newSession?.toJson(),
+  };
+}
+
+/// A client's verified way to open a new session.
+final class NewSessionInfo {
+  const NewSessionInfo({
+    required this.kind,
+    required this.prompt,
+    required this.openSupported,
+  });
+
+  /// `cli` or `uri`.
+  final String kind;
+
+  /// [PromptHandling.prefill] or [PromptHandling.send]; null when this way
+  /// takes no prompt.
+  final String? prompt;
+
+  /// The platform has an opener for [kind]; it does not prove the app exists.
+  final bool openSupported;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'kind': kind,
+    'prompt': prompt,
     'openSupported': openSupported,
   };
 }

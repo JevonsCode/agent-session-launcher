@@ -84,7 +84,7 @@ void main() {
     expect(plan.uri.toString(), 'example://session/open?id=session%3A42');
   });
 
-  test('custom CLI clients plan on Windows while Linux reports no opener', () {
+  test('custom CLI clients plan on Windows and Linux', () {
     final rules = config(<String, Object?>{
       'example-cli': cli(<String>['example', '--resume', '{id}']),
     });
@@ -106,7 +106,7 @@ void main() {
         workspacePath: '/project',
       ),
     );
-    expect(linux.supportsOpening(linuxPlan), isFalse);
+    expect(linux.supportsOpening(linuxPlan), isTrue);
   });
 
   test('a Desktop URI override keeps the host-specific identity', () {
@@ -203,9 +203,14 @@ void main() {
       'idFormat': 'uuid',
       'requiresWorkspace': false,
       'openSupported': true,
+      'newSession': <String, Object?>{
+        'kind': 'uri',
+        'prompt': 'prefill',
+        'openSupported': true,
+      },
     });
     expect(byId['pi']!.requiresWorkspace, isTrue);
-    expect(byId['pi']!.openSupported, isFalse);
+    expect(byId['pi']!.openSupported, isTrue);
     expect(byId['windsurf']!.kind, isNull);
     expect(byId['windsurf']!.openSupported, isFalse);
   });

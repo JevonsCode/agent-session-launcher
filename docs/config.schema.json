@@ -36,6 +36,7 @@
           "items": { "type": "string", "minLength": 1, "maxLength": 128 }
         },
         "launch": { "oneOf": [{ "$ref": "#/$defs/command" }, { "$ref": "#/$defs/uri" }] },
+        "newSession": { "oneOf": [{ "$ref": "#/$defs/newSessionCommand" }, { "$ref": "#/$defs/newSessionUri" }] },
         "preferences": { "$ref": "#/$defs/preferences" }
       }
     },
@@ -53,6 +54,44 @@
           "items": { "type": "string", "pattern": "^(\\{id\\}|[A-Za-z0-9._:/+=,-]{1,256})$" }
         },
         "idFormat": { "enum": ["safe", "uuid"] }
+      }
+    },
+    "newSessionCommand": {
+      "description": "Opens a new session in a terminal. promptArguments are appended only when the request has a prompt.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "command": {
+          "description": "Program name, absolute path or ~/ path, followed by fixed plain arguments.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "prefixItems": [{ "type": "string", "pattern": "^([A-Za-z0-9][A-Za-z0-9._-]{0,127}|(~[\\\\/]|/|[A-Za-z]:[\\\\/])[A-Za-z0-9._+@ ()\\\\/-]{1,1020})$" }],
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9._:/+=,-]{1,256}$" }
+        },
+        "promptArguments": {
+          "description": "Plain arguments with \"{prompt}\" exactly once; requires prompt.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "type": "string", "pattern": "^(\\{prompt\\}|[A-Za-z0-9._:/+=,-]{1,256})$" }
+        },
+        "prompt": { "description": "What the client does with the prompt.", "enum": ["prefill", "send"] }
+      }
+    },
+    "newSessionUri": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri"],
+      "properties": {
+        "uri": {
+          "description": "scheme://host/path?key=value of plain tokens; with prompt, one query value is \"{prompt}\" and is left out when a request has no prompt.",
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^[a-z][a-z0-9+.-]{0,31}://[a-z0-9][a-z0-9.-]{0,127}(/[^?#]*)?(\\?[^#]*)?$"
+        },
+        "prompt": { "description": "What the client does with the prompt.", "enum": ["prefill", "send"] }
       }
     },
     "uri": {

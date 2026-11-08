@@ -26,6 +26,9 @@
     "launch": {
       "$ref": "config.schema.json#/$defs/client/properties/launch"
     },
+    "newSession": {
+      "$ref": "config.schema.json#/$defs/client/properties/newSession"
+    },
     "preferences": {
       "$ref": "config.schema.json#/$defs/preferences"
     },

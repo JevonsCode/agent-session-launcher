@@ -1,5 +1,5 @@
 export 'src/config.dart'
-    show ClientDefinition, IdFormat, LaunchSpec, LauncherConfig;
+    show ClientDefinition, IdFormat, LaunchSpec, LauncherConfig, NewSessionSpec;
 export 'src/extensions.dart'
     show
         ExtensionFile,

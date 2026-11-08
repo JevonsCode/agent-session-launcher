@@ -7,8 +7,9 @@ Node.js hosts, with a Dart API and a one-shot JSON protocol for Node.js and
 other hosts. It takes a **session target whose origin the host has already
 verified**, and produces a fixed deep link or CLI arguments; it only tries to
 ask the operating system to open the session when `open` is explicitly
-requested. It does not save sessions, run models, send messages to an Agent,
-or expose an HTTP service. Background Agent execution is out of scope.
+requested. It can also open a **new** session, optionally handing the client
+one prompt as plain data. It does not save sessions, run models, talk to an
+Agent, or expose an HTTP service. Background Agent execution is out of scope.
 
 ## Supported clients
 
@@ -20,6 +21,18 @@ or expose an HTTP service. Background Agent execution is out of scope.
 | `claude-code`, `gemini-cli`, `copilot-cli`, `grok-build` | session ID and working directory | each client's own CLI resume command |
 | `pi`, `codex-cli` | full UUID and working directory | each client's own CLI resume command |
 | `opencode-cli`, `antigravity-cli`, `kiro-cli` | session ID and working directory | each client's own CLI resume command |
+| `cursor-cli`, `qwen-code`, `qoder-cli`, `kilo-cli`, `devin-cli`, `amp` | session ID and working directory | each client's own CLI resume command |
+| `claude-code-vscode`, `claude-chat`, `goose-desktop` | session or conversation ID | each client's deep link |
+
+**New sessions** (`inspectNew` / `openNew`): 26 clients, each with an
+official source and, where it was installed, a live test on Windows, are in
+[docs/clients.md](docs/clients.md). CLI clients (Claude Code, Codex, Cursor,
+Copilot, Gemini, Antigravity, OpenCode, Qwen Code, Qoder, Junie, Kilo, Devin,
+Pi) start in a new terminal window with the prompt sent as the first message;
+app and IDE clients (Codex app, Claude Desktop, Claude Code for VS Code,
+Cursor, Copilot in VS Code, Qoder, Zed, Goose, Cline) open a new chat with the
+prompt waiting in the composer (Cline starts the task). On Windows a CLI that
+lives in WSL runs through `wsl.exe` (`environment: "wsl"`).
 
 `codex`, `claude-code-unknown`, `opencode`, `opencode-desktop`, the generic
 `antigravity`, the Antigravity App/IDE, generic Copilot, and Windsurf are
@@ -32,12 +45,10 @@ from CLI; the host must obtain a reliable source first.
 On macOS, CLI sessions open in Terminal or iTerm; on Windows, in Windows
 Terminal, or in a new console window through Windows PowerShell when Windows
 Terminal is not installed (the plan's `opener` is `windows-terminal` or
-`powershell`). Linux can produce a CLI plan, but interactive terminal opening
-is not yet implemented there. The URI path asks the system to open it, with
-its own implementation on macOS, Windows, and Linux. On Windows the URI goes
-to `explorer.exe`, which commonly exits with 1 even when it succeeded, so its
-exit code is not treated as a failure; only failing to start it or a timeout
-is. These capabilities still
+`powershell`); on Linux, in the first terminal found, starting with the
+system's `x-terminal-emulator`. The URI path asks the system to open it, with
+its own implementation on macOS, Windows (`ShellExecute`, as a click does),
+and Linux (`xdg-open`). These capabilities still
 depend on the client and the corresponding system component actually being
 installed.
 

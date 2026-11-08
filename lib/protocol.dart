@@ -45,7 +45,12 @@ Future<Map<String, Object?>> handleRequest(
         ],
       };
     }
-    if (action != 'inspect' && action != 'open') {
+    if (!const <String>{
+      'inspect',
+      'open',
+      'inspect-new',
+      'open-new',
+    }.contains(action)) {
       throw const SessionLaunchException(
         'invalid_request',
         'Unsupported action.',
@@ -64,6 +69,36 @@ Future<Map<String, Object?>> handleRequest(
         'Target must be an object.',
       );
     }
+    final LaunchPreferences? preferences = _preferences(input);
+    if (action == 'inspect-new' || action == 'open-new') {
+      _onlyKeys(rawTarget, const <String>{
+        'client',
+        'prompt',
+        'workspacePath',
+        'environment',
+      });
+      final target = NewSessionTarget(
+        client: _string(rawTarget, 'client', required: true)!,
+        prompt: _string(rawTarget, 'prompt'),
+        workspacePath: _string(rawTarget, 'workspacePath'),
+        environment: _string(rawTarget, 'environment'),
+      );
+      if (action == 'inspect-new') {
+        final LaunchPlan plan = service.inspectNew(target);
+        return <String, Object?>{
+          'version': 1,
+          'ok': true,
+          'plan': plan.toJson(),
+          'openSupported': service.supportsOpening(plan),
+        };
+      }
+      await service.openNew(target, preferences: preferences);
+      return <String, Object?>{
+        'version': 1,
+        'ok': true,
+        'status': 'launch_requested',
+      };
+    }
     _onlyKeys(rawTarget, const <String>{
       'client',
       'conversationId',
@@ -76,18 +111,6 @@ Future<Map<String, Object?>> handleRequest(
       workspacePath: _string(rawTarget, 'workspacePath'),
       hostSessionId: _string(rawTarget, 'hostSessionId'),
     );
-    LaunchPreferences? preferences;
-    if (input.containsKey('preferences')) {
-      final Object? raw = input['preferences'];
-      if (raw is! Map<String, Object?>) {
-        throw const SessionLaunchException(
-          'invalid_request',
-          'Preferences must be an object.',
-        );
-      }
-      _onlyKeys(raw, const <String>{'macosTerminal', 'itermOpenMode'});
-      preferences = LaunchPreferences.fromJson(raw);
-    }
     if (action == 'inspect') {
       final LaunchPlan plan = service.inspect(target);
       return <String, Object?>{
@@ -119,6 +142,19 @@ Future<Map<String, Object?>> handleRequest(
       },
     };
   }
+}
+
+LaunchPreferences? _preferences(Map<String, Object?> input) {
+  if (!input.containsKey('preferences')) return null;
+  final Object? raw = input['preferences'];
+  if (raw is! Map<String, Object?>) {
+    throw const SessionLaunchException(
+      'invalid_request',
+      'Preferences must be an object.',
+    );
+  }
+  _onlyKeys(raw, const <String>{'macosTerminal', 'itermOpenMode'});
+  return LaunchPreferences.fromJson(raw);
 }
 
 void _onlyKeys(Map<String, Object?> object, Set<String> allowed) {

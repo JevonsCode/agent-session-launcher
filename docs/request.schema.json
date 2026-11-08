@@ -104,6 +104,73 @@
           }
         }
       }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "action",
+        "target"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "action": {
+          "enum": [
+            "inspect-new",
+            "open-new"
+          ]
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "client"
+          ],
+          "properties": {
+            "client": {
+              "type": "string",
+              "minLength": 1
+            },
+            "prompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "description": "Plain text for the client; tabs and line breaks allowed; a CLI prompt may not begin with \"-\"."
+            },
+            "workspacePath": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "environment": {
+              "enum": [
+                "wsl"
+              ],
+              "description": "Windows only: the CLI runs in the default WSL distribution."
+            }
+          }
+        },
+        "preferences": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "macosTerminal": {
+              "enum": [
+                "terminal",
+                "iterm"
+              ]
+            },
+            "itermOpenMode": {
+              "enum": [
+                "new-window",
+                "new-tab"
+              ]
+            }
+          }
+        }
+      }
     }
   ]
 }
