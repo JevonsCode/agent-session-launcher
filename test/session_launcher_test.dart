@@ -384,10 +384,46 @@ void main() {
       expect(executable, '/usr/bin/osascript');
       expect(arguments, hasLength(2));
       expect(arguments!.first, '-e');
+      // Terminal only types the path of a private script file.
+      final typed = RegExp(
+        'do script "exec /bin/sh \'([^\']+)\'"',
+      ).firstMatch(arguments!.last)!;
+      final script = File(typed.group(1)!);
+      addTearDown(() {
+        if (script.parent.existsSync())
+          script.parent.deleteSync(recursive: true);
+      });
       expect(
-        arguments!.last,
-        contains("cd -- '${workspace.path}' && exec 'pi' '--session'"),
+        script.readAsStringSync(),
+        allOf(
+          contains("cd -- '${workspace.path}' || exit 1"),
+          contains(
+            "exec 'pi' '--session' 'a45cce14-b0be-4aea-a8f9-e88195674770'",
+          ),
+        ),
       );
+      // A launch the system refused leaves no script behind.
+      final refused = SessionLauncher(
+        operatingSystem: 'macos',
+        processRunner: (command, args, {workingDirectory}) async {
+          arguments = args;
+          return ProcessResult(1, 1, '', '');
+        },
+      );
+      await expectLater(
+        refused.open(
+          SessionTarget(
+            client: 'pi',
+            conversationId: 'a45cce14-b0be-4aea-a8f9-e88195674770',
+            workspacePath: workspace.path,
+          ),
+        ),
+        throwsA(isA<SessionLaunchException>()),
+      );
+      final left = RegExp(
+        r"exec /bin/sh '([^']+)'",
+      ).firstMatch(arguments!.last)!.group(1)!;
+      expect(File(left).parent.existsSync(), isFalse);
     },
     skip: Platform.isWindows
         ? 'A simulated macOS workspace needs a POSIX temporary path.'

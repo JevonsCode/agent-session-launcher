@@ -42,7 +42,8 @@ there is an explicit Desktop entrypoint, and as CLI when there is an explicit
 `Claude Code CLI` source. Some OpenCode events also don't distinguish Desktop
 from CLI; the host must obtain a reliable source first.
 
-On macOS, CLI sessions open in Terminal or iTerm; on Windows, in Windows
+On macOS, CLI sessions open in Terminal or iTerm (which run a private script
+file the launcher writes; nothing is typed into the shell but its path); on Windows, in Windows
 Terminal, or in a new console window through Windows PowerShell when Windows
 Terminal is not installed (the plan's `opener` is `windows-terminal` or
 `powershell`); on Linux, in the first terminal found, starting with the

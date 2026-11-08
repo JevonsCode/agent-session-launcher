@@ -18,6 +18,8 @@ Future<void> openPlan(
 }) async {
   String executable;
   List<String> arguments;
+  // macOS: the script file a terminal runs; removed again if nothing starts it.
+  File? script;
   if (plan.kind == 'uri') {
     switch (operatingSystem) {
       case 'macos':
@@ -49,14 +51,16 @@ Future<void> openPlan(
     }
     switch (operatingSystem) {
       case 'macos':
-        final String command =
-            'cd -- ${_shellQuote(plan.workspacePath!)} && exec '
-            '${_shellQuote(plan.executable!)} ${plan.arguments.map(_shellQuote).join(' ')}';
+        // Terminal's `do script` and iTerm's `write text` type into an
+        // interactive shell, where a tab completes and a line break submits.
+        // They only type the path of a script file; the workspace, program
+        // and arguments are in the file, which /bin/sh reads.
+        script = writeMacosLaunchScript(plan);
         executable = '/usr/bin/osascript';
         arguments = <String>[
           '-e',
           _terminalScript(
-            command,
+            'exec /bin/sh ${_shellQuote(script.path)}',
             preferences.macosTerminal ?? MacosTerminal.terminal,
             preferences.itermOpenMode ?? ITermOpenMode.newWindow,
           ),
@@ -145,8 +149,10 @@ Future<void> openPlan(
       );
     }
   } on SessionLaunchException {
+    _removeScript(script);
     rethrow;
   } on Object {
+    _removeScript(script);
     throw const SessionLaunchException(
       'launch_failed',
       'The operating system could not start the launcher.',
@@ -159,6 +165,40 @@ Future<void> openPlan(
 const int _maxEncodedCommand = 32000;
 
 String _shellQuote(String value) => "'${value.replaceAll("'", "'\"'\"'")}'";
+
+/// The script a macOS terminal runs for [plan]: /bin/sh reads it from the
+/// file, so nothing in it is ever typed into an interactive shell. Every value
+/// is a single-quoted literal (a tab, a line break or `$(…)` in the prompt
+/// stays data). The script deletes itself and its private directory before
+/// it changes to the workspace and replaces itself with the client.
+String macosLaunchScript(LaunchPlan plan) => <String>[
+  '#!/bin/sh',
+  '# Written by agent-session-launcher for one launch; it removes itself.',
+  r'rm -f -- "$0"; rmdir -- "${0%/*}" 2>/dev/null',
+  'cd -- ${_shellQuote(plan.workspacePath!)} || exit 1',
+  'exec ${<String>[plan.executable!, ...plan.arguments].map(_shellQuote).join(' ')}',
+  '',
+].join('\n');
+
+/// Writes [macosLaunchScript] into a new private temporary directory
+/// (`mkdtemp`, readable only by this user).
+File writeMacosLaunchScript(LaunchPlan plan) {
+  final Directory directory = Directory.systemTemp.createTempSync(
+    'agent-session-launcher-',
+  );
+  return File('${directory.path}/launch.sh')
+    ..writeAsStringSync(macosLaunchScript(plan), flush: true);
+}
+
+void _removeScript(File? script) {
+  if (script == null) return;
+  try {
+    script.parent.deleteSync(recursive: true);
+  } on FileSystemException {
+    // Already gone: the terminal ran it.
+  }
+}
+
 String _scriptQuote(String value) =>
     value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
 
