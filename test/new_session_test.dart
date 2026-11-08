@@ -9,7 +9,8 @@ import 'package:agent_session_launcher/src/platform.dart'
         linuxTerminalArguments,
         windowsArgument,
         windowsBatchArgument,
-        windowsNewSessionScript;
+        windowsNewSessionScript,
+        wslPlan;
 import 'package:test/test.dart';
 
 Matcher failsWith(String code) =>
@@ -25,6 +26,7 @@ const List<String> hardPrompts = <String>[
   '100% done; 50%% left',
   'tab\there “typographic” ‘quotes’ – ok',
   'emoji 🧪 and CJK 汉字 ﹏ 。',
+  "it's\t\$(touch pwned)\rend",
 ];
 
 /// How the Microsoft C runtime splits a command line after the program name
@@ -383,6 +385,46 @@ void main() {
     }, skip: Platform.isWindows ? 'Needs bash.' : false);
   });
 
+  test(
+    'a real round trip through PowerShell, wsl.exe and bash',
+    () async {
+      final probe = Process.runSync('wsl.exe', <String>['--exec', 'true']);
+      if (probe.exitCode != 0) {
+        markTestSkipped('No WSL distribution.');
+        return;
+      }
+      final temp = await Directory.systemTemp.createTemp('new-session-wsl-');
+      addTearDown(() => temp.delete(recursive: true));
+      final plan = wslPlan(
+        LaunchPlan(
+          kind: 'cli',
+          executable: 'printf',
+          // NUL does not survive WSL's console relay; a visible separator does.
+          arguments: <String>['%s<|>', 'BEGIN', ...hardPrompts],
+          newSession: true,
+        ),
+        linuxDirectory: null,
+        windowsDirectory: temp.path,
+      );
+      final result = await Process.run('powershell.exe', <String>[
+        '-NoLogo',
+        '-NoProfile',
+        '-NonInteractive',
+        '-EncodedCommand',
+        encodePowerShellCommand(windowsNewSessionScript(plan)),
+      ], stdoutEncoding: utf8);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      // The person's shell profile may print a banner first.
+      final output = result.stdout as String;
+      final begin = output.indexOf('BEGIN<|>');
+      expect(begin, isNonNegative, reason: output);
+      final parts = output.substring(begin + 'BEGIN<|>'.length).split('<|>');
+      expect(parts.sublist(0, parts.length - 1), hardPrompts);
+    },
+    skip: Platform.isWindows ? false : 'Needs Windows.',
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
   group('Windows quoting', () {
     test('C runtime arguments round-trip', () {
       for (final value in <String>[...hardPrompts, '', 'plain', r'a\\b']) {
@@ -588,7 +630,8 @@ void main() {
             ),
           );
           // Terminal types the command `do script` holds: undo AppleScript's
-          // string escapes and run it in a shell.
+          // string escapes. It is only the path of a script file, so no tab
+          // or line break of the prompt ever reaches an interactive shell.
           final quoted = RegExp(
             r'do script "((?:[^"\\]|\\.)*)"',
           ).firstMatch(script!)!.group(1)!;
@@ -596,7 +639,18 @@ void main() {
             RegExp(r'\\(.)', dotAll: true),
             (m) => m[1]!,
           );
+          final typed = RegExp(
+            r"^exec /bin/sh '([^'\t\r\n]+)'$",
+          ).firstMatch(command);
+          expect(typed, isNotNull, reason: command);
+          final file = File(typed!.group(1)!);
+          expect(file.existsSync(), isTrue);
           expect(Process.runSync('sh', <String>['-c', command]).exitCode, 0);
+          expect(
+            file.parent.existsSync(),
+            isFalse,
+            reason: 'it removes itself',
+          );
           expect(read(), <String>[prompt], reason: jsonEncode(prompt));
           expect(
             File('${out.path}.pwd').readAsStringSync().trim(),

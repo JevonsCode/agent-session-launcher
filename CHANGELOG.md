@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.1
+
+### Fixed
+
+- macOS: Terminal's `do script` and iTerm's `write text` typed the whole
+  command, prompt included, into an interactive shell, where a tab in the
+  prompt could trigger completion and close a quote. A CLI plan is now
+  written to `launch.sh` in a private temporary directory and the terminal
+  only types `exec /bin/sh '<file>'`; the script removes itself (or the
+  launcher does, when the launch is refused). Applies to resumed sessions too.
+
+### Tests
+
+- macOS/Linux CI runs the script the terminal would run and checks every
+  argument (tabs, carriage returns, `$(…)`, CJK) and that it removed itself.
+- Windows: a real round trip through PowerShell, `wsl.exe` and bash, skipped
+  without a WSL distribution.
+
 ## 0.5.0
 
 ### Added

@@ -69,6 +69,13 @@ parent Agent session sets (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`,
 program is missing it says so and waits for Enter. Linux terminals also drop
 those variables; macOS Terminal and iTerm start a fresh login shell.
 
+On macOS a CLI plan (new or resumed) is written to `launch.sh` in a new
+private temporary directory, every value a single-quoted literal, and Terminal
+(`do script`) or iTerm (`write text`) only types `exec /bin/sh '<that file>'`.
+Nothing of the prompt is typed into the interactive shell, where a tab would
+complete and a line break would submit. The script removes itself before it
+starts the client; when the system refuses the launch, the launcher removes it.
+
 ## Exit codes and errors
 
 A non-zero exit code from the opener is `launch_failed`. On Windows a URI is
