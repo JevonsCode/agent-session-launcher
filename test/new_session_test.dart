@@ -364,24 +364,20 @@ void main() {
         failsWith('invalid_target'),
       );
     });
-    test(
-      'the bash wrapper passes every argument through unchanged',
-      () async {
-        final result = await Process.run('bash', <String>[
-          '-c',
-          r'p=$0; case $p in "~/"*) p=$HOME/${p#"~/"};; esac; exec "$p" "$@"',
-          'printf',
-          r'%s\0',
-          ...hardPrompts,
-        ]);
-        expect(result.exitCode, 0);
-        expect(
-          (result.stdout as String).split('\x00')..removeLast(),
-          hardPrompts,
-        );
-      },
-      skip: Platform.isWindows ? 'Needs bash.' : false,
-    );
+    test('the bash wrapper passes every argument through unchanged', () async {
+      final result = await Process.run('bash', <String>[
+        '-c',
+        r'p=$0; case $p in "~/"*) p=$HOME/${p#"~/"};; esac; exec "$p" "$@"',
+        'printf',
+        r'%s\0',
+        ...hardPrompts,
+      ]);
+      expect(result.exitCode, 0);
+      expect(
+        (result.stdout as String).split('\x00')..removeLast(),
+        hardPrompts,
+      );
+    }, skip: Platform.isWindows ? 'Needs bash.' : false);
   });
 
   group('Windows quoting', () {
